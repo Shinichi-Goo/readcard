@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ReadCard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,300;0,7..72,400;0,7..72,500;1,7..72,300;1,7..72,400&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary:#FAF8F5;--bg-secondary:#F0EDE8;--bg-card:#FFFFFF;
+  --text-primary:#2C2C2C;--text-secondary:#6B6B6B;--text-muted:#9A9A9A;
+  --accent:#C4704B;--accent-light:#F4E8E1;--accent-dark:#A35A3A;
+  --highlight-yellow:#FFF3C4;--highlight-yellow-border:#F0D060;
+  --border:#E8E4DF;--shadow:0 2px 12px rgba(0,0,0,0.06);--radius:12px;
+  --font-body:'Literata',Georgia,serif;--font-ui:'DM Sans',-apple-system,sans-serif;
+  --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);
+  --green:#4CAF50;--green-light:#E8F5E9;--orange:#FF9800;--orange-light:#FFF3E0;
+  --red:#E53935;--red-light:#FFEBEE;
+}
+[data-theme="dark"] {
+  --bg-primary:#1a1a2e;--bg-secondary:#16213e;--bg-card:#222244;
+  --text-primary:#E8E4DF;--text-secondary:#A0A0B0;--text-muted:#6B6B80;
+  --accent:#D4845A;--accent-light:#3A2A22;--accent-dark:#E8A070;
+  --highlight-yellow:#3D3520;--highlight-yellow-border:#9A8030;
+  --border:#2A2A4A;--shadow:0 2px 12px rgba(0,0,0,0.2);
+  --green-light:#1B3A1B;--orange-light:#3A2A10;--red-light:#3A1515;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);transition:background .3s,color .3s}
+.screen{display:none;height:100%;width:100%;position:absolute;top:0;left:0}
+.screen.active{display:flex;flex-direction:column}
+
+/* LIBRARY */
+#library-screen{padding-top:var(--safe-top)}
+.library-header{padding:20px 24px 12px;display:flex;align-items:center;justify-content:space-between}
+.library-header h1{font-family:var(--font-ui);font-size:28px;font-weight:600;letter-spacing:-.5px}
+.header-actions{display:flex;gap:8px}
+.icon-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--bg-secondary);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+.icon-btn:active{transform:scale(.92);background:var(--border)}
+.library-content{flex:1;overflow-y:auto;padding:12px 24px 120px;-webkit-overflow-scrolling:touch}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;text-align:center;padding:0 20px}
+.empty-icon{width:80px;height:80px;background:var(--accent-light);border-radius:24px;display:flex;align-items:center;justify-content:center;margin-bottom:20px}
+.empty-state h2{font-family:var(--font-ui);font-size:20px;font-weight:500;margin-bottom:8px}
+.empty-state p{font-size:15px;color:var(--text-secondary);line-height:1.5;max-width:280px}
+.book-list{display:flex;flex-direction:column;gap:12px}
+.book-card{background:var(--bg-card);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);display:flex;gap:14px;cursor:pointer;transition:all .2s;border:1px solid var(--border);position:relative}
+.book-card:active{transform:scale(.98)}
+.book-cover{width:52px;height:72px;border-radius:6px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.book-cover img{width:100%;height:100%;object-fit:cover}
+.book-cover svg{opacity:.5}
+.book-info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.book-title{font-family:var(--font-ui);font-size:15px;font-weight:500;line-height:1.3;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.book-author{font-size:13px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.book-progress{margin-top:8px;height:3px;background:var(--bg-secondary);border-radius:2px;overflow:hidden}
+.book-progress-bar{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
+.book-delete{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.5}
+.book-delete:active{opacity:1;background:var(--bg-secondary)}
+.fab{position:fixed;bottom:calc(74px + var(--safe-bottom));right:24px;width:56px;height:56px;border-radius:16px;border:none;background:var(--accent);color:white;box-shadow:0 4px 20px rgba(196,112,75,.35);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;z-index:100}
+.fab:active{transform:scale(.92)}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
+.modal-overlay.active{display:flex}
+.modal-sheet{background:var(--bg-card);border-radius:20px 20px 0 0;padding:12px 24px calc(24px + var(--safe-bottom));width:100%;max-width:500px;animation:slideUp .3s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-handle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px}
+.modal-title{font-family:var(--font-ui);font-size:18px;font-weight:600;margin-bottom:20px}
+.import-option{display:flex;align-items:center;gap:14px;padding:16px;border-radius:var(--radius);border:1.5px dashed var(--border);cursor:pointer;transition:all .2s;margin-bottom:12px;background:var(--bg-primary)}
+.import-option:active{border-color:var(--accent);background:var(--accent-light)}
+.import-option-icon{width:44px;height:44px;border-radius:12px;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.import-option-text h3{font-family:var(--font-ui);font-size:15px;font-weight:500;margin-bottom:2px}
+.import-option-text p{font-size:13px;color:var(--text-secondary)}
+.url-input-group{display:none;margin-top:4px}
+.url-input-group.active{display:flex;gap:8px}
+.url-input-group input{flex:1;padding:12px 16px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-primary);font-family:var(--font-ui);font-size:14px;color:var(--text-primary);outline:none}
+.url-input-group input:focus{border-color:var(--accent)}
+.url-input-group button{padding:12px 20px;border-radius:10px;border:none;background:var(--accent);color:white;font-family:var(--font-ui);font-weight:500;font-size:14px;cursor:pointer}
+
+/* READER */
+#reader-screen{background:var(--bg-primary)}
+.reader-header{padding:calc(8px + var(--safe-top)) 16px 8px;display:flex;align-items:center;justify-content:space-between;background:var(--bg-primary);border-bottom:1px solid var(--border);z-index:50}
+.reader-back{display:flex;align-items:center;gap:4px;border:none;background:none;color:var(--accent);font-family:var(--font-ui);font-size:15px;font-weight:500;cursor:pointer;padding:8px 4px}
+.reader-chapter-title{font-family:var(--font-ui);font-size:13px;color:var(--text-muted);max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+.reader-settings-btn{padding:8px;border:none;background:none;color:var(--text-secondary);cursor:pointer}
+#reader-container{flex:1;overflow:hidden;position:relative}
+.reader-footer{padding:8px 24px calc(8px + var(--safe-bottom));background:var(--bg-primary);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;z-index:50}
+.reader-progress-text{font-family:var(--font-ui);font-size:12px;color:var(--text-muted)}
+.reader-nav-btn{padding:8px 16px;border:none;background:var(--bg-secondary);color:var(--text-secondary);border-radius:8px;font-family:var(--font-ui);font-size:13px;font-weight:500;cursor:pointer}
+.reader-nav-btn:active{background:var(--border)}
+
+/* Selection action bar (bottom-fixed) */
+.selection-bar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-card);border-top:1px solid var(--border);padding:12px 20px calc(12px + var(--safe-bottom));z-index:300;display:flex;align-items:center;gap:12px;transform:translateY(100%);transition:transform .25s ease;box-shadow:0 -4px 20px rgba(0,0,0,.08)}
+.selection-bar.active{transform:translateY(0)}
+.selection-bar-preview{flex:1;min-width:0;font-family:var(--font-ui);font-size:13px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic}
+.selection-bar-actions{display:flex;gap:8px;flex-shrink:0}
+.sel-btn{padding:10px 16px;border:none;border-radius:10px;font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s}
+.sel-btn:active{transform:scale(.95)}
+.sel-hl{background:var(--highlight-yellow);color:var(--text-primary)}
+.sel-card{background:var(--accent);color:white}
+
+/* Reader settings panel */
+.reader-settings-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
+.reader-settings-overlay.active{display:flex}
+.reader-settings-panel{background:var(--bg-card);border-radius:20px 20px 0 0;padding:12px 24px calc(24px + var(--safe-bottom));width:100%;max-width:500px;animation:slideUp .3s ease}
+.settings-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border)}
+.settings-row:last-child{border-bottom:none}
+.settings-label{font-family:var(--font-ui);font-size:14px;font-weight:500;color:var(--text-primary)}
+.settings-control{display:flex;align-items:center;gap:12px}
+.settings-val{font-family:var(--font-ui);font-size:14px;font-weight:600;color:var(--accent);min-width:36px;text-align:center}
+.settings-btn{width:36px;height:36px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-ui);font-size:18px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.settings-btn:active{background:var(--accent-light);border-color:var(--accent)}
+.spread-toggle{display:flex;border-radius:10px;overflow:hidden;border:1.5px solid var(--border)}
+.spread-opt{padding:8px 16px;border:none;background:var(--bg-primary);font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--text-secondary);cursor:pointer;transition:all .15s}
+.spread-opt.active{background:var(--accent);color:white}
+
+/* Card edit modal */
+.edit-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
+.edit-modal-overlay.active{display:flex}
+.edit-modal{background:var(--bg-card);border-radius:20px 20px 0 0;padding:12px 24px calc(24px + var(--safe-bottom));width:100%;max-width:500px;animation:slideUp .3s ease;max-height:80vh;display:flex;flex-direction:column}
+.edit-modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.edit-modal-title{font-family:var(--font-ui);font-size:18px;font-weight:600}
+.edit-modal-save{padding:8px 20px;border:none;border-radius:10px;background:var(--accent);color:white;font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer}
+.edit-modal-save:active{transform:scale(.95)}
+.edit-modal-cancel{padding:8px 12px;border:none;background:none;color:var(--text-muted);font-family:var(--font-ui);font-size:14px;cursor:pointer}
+.edit-field{margin-bottom:16px}
+.edit-field label{display:block;font-family:var(--font-ui);font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.edit-field textarea{width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-primary);font-family:var(--font-body);font-size:15px;line-height:1.6;color:var(--text-primary);outline:none;resize:vertical;min-height:80px}
+.edit-field textarea:focus{border-color:var(--accent)}
+.edit-field input{width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-primary);font-family:var(--font-ui);font-size:14px;color:var(--text-primary);outline:none}
+.edit-field input:focus{border-color:var(--accent)}
+.fc-card-actions{display:flex;gap:6px;position:absolute;top:12px;right:12px}
+.fc-card-btn{border:none;background:none;color:var(--text-muted);cursor:pointer;padding:4px;opacity:.5;transition:opacity .2s}
+.fc-card-btn:active{opacity:1}
+
+/* CARDS SCREEN */
+#flashcard-screen{padding-top:var(--safe-top)}
+.fc-header{padding:20px 24px 12px;display:flex;align-items:center;justify-content:space-between}
+.fc-header h1{font-family:var(--font-ui);font-size:28px;font-weight:600;letter-spacing:-.5px}
+.review-banner{margin:0 24px 16px;padding:16px 20px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-radius:var(--radius);color:white;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:all .2s;box-shadow:0 4px 16px rgba(196,112,75,.3)}
+.review-banner:active{transform:scale(.98)}
+.review-banner-left{display:flex;flex-direction:column;gap:4px}
+.review-banner-title{font-family:var(--font-ui);font-size:16px;font-weight:600}
+.review-banner-sub{font-size:13px;opacity:.85}
+.review-banner-icon{width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:12px;display:flex;align-items:center;justify-content:center}
+.source-filter{display:flex;gap:8px;padding:0 24px 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.source-filter::-webkit-scrollbar{display:none}
+.source-tab{padding:6px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--bg-card);font-family:var(--font-ui);font-size:13px;font-weight:500;color:var(--text-secondary);cursor:pointer;white-space:nowrap;transition:all .2s;flex-shrink:0}
+.source-tab.active{background:var(--accent);color:white;border-color:var(--accent)}
+.source-tab:active{transform:scale(.95)}
+.fc-content{flex:1;overflow-y:auto;padding:4px 24px 40px;-webkit-overflow-scrolling:touch}
+.fc-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:50vh;text-align:center}
+.fc-empty p{color:var(--text-secondary);font-size:15px;line-height:1.5}
+.fc-card{background:var(--bg-card);border-radius:var(--radius);padding:20px;margin-bottom:12px;box-shadow:var(--shadow);border-left:3px solid var(--accent);border-right:1px solid var(--border);border-top:1px solid var(--border);border-bottom:1px solid var(--border);position:relative}
+.fc-card-text{font-size:16px;line-height:1.6;font-style:italic}
+.fc-card-meta{margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fc-card-source{font-family:var(--font-ui);font-size:12px;color:var(--text-muted)}
+.fc-card-level{font-family:var(--font-ui);font-size:11px;font-weight:500;padding:2px 8px;border-radius:10px}
+.level-new{background:var(--accent-light);color:var(--accent)}
+.level-learning{background:var(--orange-light);color:var(--orange)}
+.level-familiar{background:var(--green-light);color:var(--green)}
+
+/* REVIEW SCREEN */
+#review-screen{padding-top:var(--safe-top);background:var(--bg-primary)}
+.review-header{padding:16px 24px 12px;display:flex;align-items:center;justify-content:space-between}
+.review-back{display:flex;align-items:center;gap:4px;border:none;background:none;color:var(--accent);font-family:var(--font-ui);font-size:15px;font-weight:500;cursor:pointer;padding:8px 4px}
+.review-progress-bar{flex:1;margin:0 16px;height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden}
+.review-progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .4s ease}
+.review-counter{font-family:var(--font-ui);font-size:14px;color:var(--text-muted);font-weight:500}
+.review-card-area{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+.review-card{width:100%;max-width:400px;min-height:260px;background:var(--bg-card);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.08);border:1px solid var(--border);padding:32px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative;animation:cardIn .35s ease}
+@keyframes cardIn{from{opacity:0;transform:translateY(30px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+.review-card-text{font-size:18px;line-height:1.7;font-style:italic;max-height:200px;overflow-y:auto}
+.review-card-source{margin-top:16px;font-family:var(--font-ui);font-size:12px;color:var(--text-muted)}
+.review-card-interval{position:absolute;top:16px;right:16px;font-family:var(--font-ui);font-size:11px;color:var(--text-muted);background:var(--bg-secondary);padding:3px 10px;border-radius:10px}
+.review-actions{padding:16px 24px calc(24px + var(--safe-bottom));display:flex;gap:12px}
+.review-btn{flex:1;padding:16px 8px;border:none;border-radius:14px;font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:4px}
+.review-btn:active{transform:scale(.95)}
+.review-btn-sub{font-size:11px;font-weight:400;opacity:.7}
+.btn-forgot{background:var(--red-light);color:var(--red)}
+.btn-fuzzy{background:var(--orange-light);color:var(--orange)}
+.btn-know{background:var(--green-light);color:var(--green)}
+.review-complete{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
+.review-complete-icon{width:80px;height:80px;background:var(--green-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:20px}
+.review-complete h2{font-family:var(--font-ui);font-size:22px;font-weight:600;margin-bottom:8px}
+.review-complete p{font-size:15px;color:var(--text-secondary);line-height:1.5;margin-bottom:24px}
+.review-complete-stats{display:flex;gap:24px;margin-bottom:32px}
+.stat-item{text-align:center}
+.stat-num{font-family:var(--font-ui);font-size:28px;font-weight:600}
+.stat-label{font-family:var(--font-ui);font-size:12px;color:var(--text-muted);margin-top:2px}
+.stat-green{color:var(--green)}.stat-orange{color:var(--orange)}.stat-red{color:var(--red)}
+.review-done-btn{padding:14px 40px;border-radius:12px;border:none;background:var(--accent);color:white;font-family:var(--font-ui);font-size:15px;font-weight:600;cursor:pointer}
+.review-done-btn:active{transform:scale(.95)}
+
+/* BOTTOM NAV */
+.bottom-nav{display:flex;background:var(--bg-card);border-top:1px solid var(--border);padding:8px 0 calc(8px + var(--safe-bottom))}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border:none;background:none;color:var(--text-muted);font-family:var(--font-ui);font-size:11px;font-weight:500;cursor:pointer;transition:color .2s}
+.nav-item.active{color:var(--accent)}
+
+/* SHARED */
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.loading-overlay.active{display:flex}
+.loading-spinner{width:48px;height:48px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(20px);background:var(--text-primary);color:var(--bg-primary);font-family:var(--font-ui);font-size:14px;font-weight:500;padding:10px 20px;border-radius:10px;z-index:600;opacity:0;transition:all .3s;pointer-events:none}
+.toast.active{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- LIBRARY -->
+<div id="library-screen" class="screen active">
+  <div class="library-header">
+    <h1>ReadCard</h1>
+    <div class="header-actions">
+      <button class="icon-btn" onclick="toggleTheme()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="library-content" id="library-content">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+      <h2>Your Library</h2>
+      <p>Import an EPUB book or paste a URL to start reading and creating flashcards.</p>
+    </div>
+    <div class="book-list" id="book-list"></div>
+  </div>
+  <button class="fab" onclick="openImportModal()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+  <div class="bottom-nav">
+    <button class="nav-item active" onclick="showScreen('library')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Library</button>
+    <button class="nav-item" onclick="showScreen('flashcard')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Cards</button>
+  </div>
+</div>
+
+<!-- READER -->
+<div id="reader-screen" class="screen">
+  <div class="reader-header" id="reader-header">
+    <button class="reader-back" onclick="closeReader()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>Back</button>
+    <span class="reader-chapter-title" id="reader-chapter-title"></span>
+    <button class="reader-settings-btn" onclick="openReaderSettings()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
+  </div>
+  <div id="reader-container"></div>
+  <div class="reader-footer" id="reader-footer">
+    <button class="reader-nav-btn" onclick="prevPage()">← Prev</button>
+    <span class="reader-progress-text" id="reader-progress">0%</span>
+    <button class="reader-nav-btn" onclick="nextPage()">Next →</button>
+  </div>
+</div>
+
+<!-- CARDS -->
+<div id="flashcard-screen" class="screen">
+  <div class="fc-header">
+    <h1>Cards</h1>
+    <span id="fc-count" style="font-family:var(--font-ui);font-size:14px;color:var(--text-muted)"></span>
+  </div>
+  <div class="review-banner" id="review-banner" onclick="startReview()" style="display:none">
+    <div class="review-banner-left">
+      <div class="review-banner-title" id="review-banner-title">Start Review</div>
+      <div class="review-banner-sub" id="review-banner-sub">0 cards due</div>
+    </div>
+    <div class="review-banner-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+  </div>
+  <div class="source-filter" id="source-filter"></div>
+  <div class="fc-content" id="fc-content">
+    <div class="fc-empty" id="fc-empty"><p>No flashcards yet.<br>Highlight text while reading<br>and tap "Card" to create one.</p></div>
+    <div id="fc-list"></div>
+  </div>
+  <div class="bottom-nav">
+    <button class="nav-item" onclick="showScreen('library')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Library</button>
+    <button class="nav-item active" onclick="showScreen('flashcard')"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Cards</button>
+  </div>
+</div>
+
+<!-- REVIEW -->
+<div id="review-screen" class="screen">
+  <div class="review-header">
+    <button class="review-back" onclick="exitReview()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    <div class="review-progress-bar"><div class="review-progress-fill" id="review-progress-fill" style="width:0%"></div></div>
+    <span class="review-counter" id="review-counter">0/0</span>
+  </div>
+  <div id="review-body"></div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="import-modal" onclick="closeImportModal(event)">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Import Content</div>
+    <div class="import-option" onclick="document.getElementById('epub-input').click()">
+      <div class="import-option-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div class="import-option-text"><h3>Import EPUB</h3><p>Open a local .epub file</p></div>
+    </div>
+    <input type="file" id="epub-input" accept=".epub" style="display:none" onchange="handleEpubImport(event)">
+    <div class="import-option" onclick="toggleUrlInput()">
+      <div class="import-option-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+      <div class="import-option-text"><h3>Import from URL</h3><p>Paste a web article link</p></div>
+    </div>
+    <div class="url-input-group" id="url-input-group">
+      <input type="url" id="url-input" placeholder="https://example.com/article">
+      <button onclick="handleUrlImport()">Go</button>
+    </div>
+  </div>
+</div>
+
+<div class="selection-bar" id="selection-bar">
+  <div class="selection-bar-preview" id="selection-preview">"..."</div>
+  <div class="selection-bar-actions">
+    <button class="sel-btn sel-hl" onclick="highlightSelection()"><svg width="14" height="14" viewBox="0 0 24 24" fill="var(--highlight-yellow-border)" stroke="var(--highlight-yellow-border)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>Highlight</button>
+    <button class="sel-btn sel-card" onclick="addToFlashcards()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Card</button>
+  </div>
+</div>
+
+<div class="reader-settings-overlay" id="reader-settings" onclick="closeReaderSettings(event)">
+  <div class="reader-settings-panel" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Reading Settings</div>
+    <div class="settings-row">
+      <span class="settings-label">Font Size</span>
+      <div class="settings-control">
+        <button class="settings-btn" onclick="changeFontSize(-1)">−</button>
+        <span class="settings-val" id="font-size-val">16</span>
+        <button class="settings-btn" onclick="changeFontSize(1)">+</button>
+      </div>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Line Spacing</span>
+      <div class="settings-control">
+        <button class="settings-btn" onclick="changeLineHeight(-0.1)">−</button>
+        <span class="settings-val" id="line-height-val">1.8</span>
+        <button class="settings-btn" onclick="changeLineHeight(0.1)">+</button>
+      </div>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Page Layout</span>
+      <div class="spread-toggle">
+        <button class="spread-opt" id="spread-single" onclick="setSpread('none')">Single</button>
+        <button class="spread-opt" id="spread-double" onclick="setSpread('auto')">Double</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="edit-modal-overlay" id="edit-modal" onclick="closeEditModal(event)">
+  <div class="edit-modal" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="edit-modal-header">
+      <button class="edit-modal-cancel" onclick="closeEditModal()">Cancel</button>
+      <span class="edit-modal-title">Edit Card</span>
+      <button class="edit-modal-save" onclick="saveCardEdit()">Save</button>
+    </div>
+    <div class="edit-field">
+      <label>Content</label>
+      <textarea id="edit-card-text" rows="4"></textarea>
+    </div>
+    <div class="edit-field">
+      <label>Notes / Annotation</label>
+      <textarea id="edit-card-note" rows="3" placeholder="Add your notes here..."></textarea>
+    </div>
+    <div class="edit-field">
+      <label>Source</label>
+      <input type="text" id="edit-card-source">
+    </div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loading"><div class="loading-spinner"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== STATE =====
+let library = JSON.parse(localStorage.getItem('rc_library') || '[]');
+let flashcards = JSON.parse(localStorage.getItem('rc_flashcards') || '[]');
+let currentBook = null, currentRendition = null, selectedText = '', selectedCfiRange = null;
+let reviewQueue = [], reviewIndex = 0, reviewStats = {know:0,fuzzy:0,forgot:0};
+let activeSourceFilter = 'all';
+let readerSettings = JSON.parse(localStorage.getItem('rc_reader_settings') || '{"fontSize":16,"lineHeight":1.8,"spread":"none"}');
+let editingCardId = null;
+
+// ===== SPACED REPETITION =====
+// Intervals in minutes: immediate, 1min, 10min, 1day, 3days, 7days, 15days, 30days, 60days
+const INTERVALS = [0, 1, 10, 1440, 4320, 10080, 21600, 43200, 86400];
+
+function getInterval(level) {
+  return INTERVALS[Math.min(Math.max(0, level), INTERVALS.length - 1)];
+}
+
+function formatInterval(level) {
+  const m = getInterval(level);
+  if (m === 0) return 'Now';
+  if (m < 60) return m + 'min';
+  if (m < 1440) return Math.round(m / 60) + 'hr';
+  return Math.round(m / 1440) + 'd';
+}
+
+function processAnswer(card, answer) {
+  const now = Date.now();
+  if (answer === 'know') card.level = (card.level || 0) + 1;
+  else if (answer === 'fuzzy') card.level = Math.max(0, (card.level || 0) - 1);
+  else card.level = 0;
+  card.nextReview = now + getInterval(card.level) * 60000;
+  card.lastReviewed = now;
+  card.reviewCount = (card.reviewCount || 0) + 1;
+  saveFlashcards();
+}
+
+function isDue(card) { return !card.nextReview || Date.now() >= card.nextReview; }
+
+function getDueCards(source) {
+  return flashcards.filter(c => (source === 'all' || c.source === source) && isDue(c));
+}
+
+function getLevelLabel(card) {
+  const l = card.level || 0;
+  if (l === 0) return {text:'New',cls:'level-new'};
+  if (l <= 2) return {text:'Learning',cls:'level-learning'};
+  return {text:'Familiar',cls:'level-familiar'};
+}
+
+function formatNextReview(ts) {
+  if (!ts) return 'now';
+  const d = ts - Date.now();
+  if (d <= 0) return 'now';
+  const m = Math.round(d / 60000);
+  if (m < 60) return m + 'min';
+  const h = Math.round(m / 60);
+  if (h < 24) return h + 'hr';
+  return Math.round(h / 24) + 'd';
+}
+
+function saveFlashcards() { localStorage.setItem('rc_flashcards', JSON.stringify(flashcards)); }
+
+// ===== THEME =====
+if (localStorage.getItem('rc_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+function toggleTheme() {
+  const d = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.documentElement.setAttribute('data-theme', d ? '' : 'dark');
+  localStorage.setItem('rc_theme', d ? 'light' : 'dark');
+  if (currentRendition) applyReaderTheme();
+}
+
+function applyReaderTheme() {
+  const d = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (!currentRendition) return;
+  const fs = readerSettings.fontSize + 'px';
+  const lh = readerSettings.lineHeight;
+  currentRendition.themes.default({
+    'body':{'color':(d?'#E8E4DF':'#2C2C2C')+' !important','background':(d?'#1a1a2e':'#FAF8F5')+' !important','font-family':"'Literata',Georgia,serif !important",'line-height':lh+' !important','padding':'0 8px !important','font-size':fs+' !important'},
+    'p':{'color':(d?'#E8E4DF':'#2C2C2C')+' !important','line-height':lh+' !important','font-size':fs+' !important'},
+    'a':{'color':(d?'#D4845A':'#C4704B')+' !important'}
+  });
+}
+function saveReaderSettings(){localStorage.setItem('rc_reader_settings',JSON.stringify(readerSettings));}
+function openReaderSettings(){
+  document.getElementById('reader-settings').classList.add('active');
+  document.getElementById('font-size-val').textContent=readerSettings.fontSize;
+  document.getElementById('line-height-val').textContent=readerSettings.lineHeight.toFixed(1);
+  document.getElementById('spread-single').classList.toggle('active',readerSettings.spread==='none');
+  document.getElementById('spread-double').classList.toggle('active',readerSettings.spread==='auto');
+}
+function closeReaderSettings(e){
+  if(e&&e.target!==document.getElementById('reader-settings'))return;
+  document.getElementById('reader-settings').classList.remove('active');
+}
+function changeFontSize(delta){
+  readerSettings.fontSize=Math.min(28,Math.max(12,readerSettings.fontSize+delta));
+  document.getElementById('font-size-val').textContent=readerSettings.fontSize;
+  saveReaderSettings(); applyReaderTheme();
+}
+function changeLineHeight(delta){
+  readerSettings.lineHeight=Math.min(3.0,Math.max(1.2,parseFloat((readerSettings.lineHeight+delta).toFixed(1))));
+  document.getElementById('line-height-val').textContent=readerSettings.lineHeight.toFixed(1);
+  saveReaderSettings(); applyReaderTheme();
+}
+function setSpread(val){
+  readerSettings.spread=val; saveReaderSettings();
+  document.getElementById('spread-single').classList.toggle('active',val==='none');
+  document.getElementById('spread-double').classList.toggle('active',val==='auto');
+  if(currentRendition){
+    // Need to re-render with new spread setting
+    closeReaderSettings();
+    if(currentBook) openBook(currentBook.id);
+  }
+}
+
+// ===== SCREENS =====
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(name + '-screen').classList.add('active');
+  document.querySelectorAll('.bottom-nav').forEach(nav => {
+    nav.querySelectorAll('.nav-item').forEach(item => {
+      item.classList.remove('active');
+      if (item.getAttribute('onclick') && item.getAttribute('onclick').includes("'" + name + "'")) item.classList.add('active');
+    });
+  });
+  if (name === 'flashcard') renderFlashcards();
+}
+
+// ===== UTILS =====
+function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('active'); setTimeout(() => t.classList.remove('active'), 2000); }
+function showLoading() { document.getElementById('loading').classList.add('active'); }
+function hideLoading() { document.getElementById('loading').classList.remove('active'); }
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+// ===== IMPORT =====
+function openImportModal() { document.getElementById('import-modal').classList.add('active'); }
+function closeImportModal(e) { if (e && e.target !== document.getElementById('import-modal')) return; document.getElementById('import-modal').classList.remove('active'); document.getElementById('url-input-group').classList.remove('active'); }
+function toggleUrlInput() { document.getElementById('url-input-group').classList.toggle('active'); document.getElementById('url-input').focus(); }
+
+async function handleEpubImport(event) {
+  const file = event.target.files[0]; if (!file) return;
+  closeImportModal({target:document.getElementById('import-modal')}); showLoading();
+  try {
+    const ab = await file.arrayBuffer();
+    const bookId = 'book_' + Date.now();
+    await storeBookData(bookId, ab);
+    const book = ePub(ab); await book.ready;
+    const meta = book.packaging.metadata;
+    let coverUrl = null; try { coverUrl = await book.coverUrl(); } catch(e) {}
+    library.push({id:bookId,title:meta.title||file.name.replace('.epub',''),author:meta.creator||'Unknown',coverUrl,progress:0,currentCfi:null,addedAt:Date.now()});
+    saveLibrary(); renderLibrary(); book.destroy(); hideLoading(); showToast('Book imported!');
+  } catch(e) { hideLoading(); showToast('Error: '+e.message); }
+  event.target.value = '';
+}
+
+function handleUrlImport() { showToast('URL import coming in Phase 2!'); closeImportModal({target:document.getElementById('import-modal')}); }
+
+// ===== IndexedDB =====
+function openDB() { return new Promise((res,rej) => { const r = indexedDB.open('ReadCardDB',1); r.onupgradeneeded=()=>r.result.createObjectStore('books'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function storeBookData(id,ab) { const db=await openDB(); return new Promise((res,rej)=>{const tx=db.transaction('books','readwrite');tx.objectStore('books').put(ab,id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error)}); }
+async function getBookData(id) { const db=await openDB(); return new Promise((res,rej)=>{const tx=db.transaction('books','readonly');const r=tx.objectStore('books').get(id);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}); }
+async function deleteBookData(id) { const db=await openDB(); return new Promise((res,rej)=>{const tx=db.transaction('books','readwrite');tx.objectStore('books').delete(id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error)}); }
+
+// ===== LIBRARY =====
+function saveLibrary() { localStorage.setItem('rc_library', JSON.stringify(library)); }
+function renderLibrary() {
+  const list=document.getElementById('book-list'),empty=document.getElementById('empty-state');
+  if (!library.length) { empty.style.display='flex'; list.innerHTML=''; return; }
+  empty.style.display='none';
+  list.innerHTML = library.map((b,i) => '<div class="book-card" onclick="openBook(\''+b.id+'\')"><div class="book-cover">'+(b.coverUrl?'<img src="'+b.coverUrl+'" alt="">':'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>')+'</div><div class="book-info"><div class="book-title">'+escapeHtml(b.title)+'</div><div class="book-author">'+escapeHtml(b.author)+'</div><div class="book-progress"><div class="book-progress-bar" style="width:'+Math.round((b.progress||0)*100)+'%"></div></div></div><button class="book-delete" onclick="event.stopPropagation();deleteBook('+i+')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>').join('');
+}
+async function deleteBook(i) { const b=library[i]; if(b) await deleteBookData(b.id); library.splice(i,1); saveLibrary(); renderLibrary(); showToast('Book removed'); }
+
+// ===== READER =====
+async function openBook(bookId) {
+  showLoading();
+  try {
+    const ab=await getBookData(bookId); if(!ab){hideLoading();showToast('Book data not found');return;}
+    currentBook=library.find(b=>b.id===bookId);
+    const book=ePub(ab), container=document.getElementById('reader-container');
+    container.innerHTML='';
+    currentRendition=book.renderTo(container,{width:'100%',height:'100%',spread:readerSettings.spread,flow:'paginated'});
+    applyReaderTheme();
+    if(currentBook.currentCfi) currentRendition.display(currentBook.currentCfi); else currentRendition.display();
+    book.ready.then(()=>book.locations.generate(1600)).then(()=>{
+      currentRendition.on('relocated',(loc)=>{
+        const p=book.locations.percentageFromCfi(loc.start.cfi);
+        document.getElementById('reader-progress').textContent=Math.round(p*100)+'%';
+        if(currentBook){currentBook.progress=p;currentBook.currentCfi=loc.start.cfi;saveLibrary();}
+      });
+    });
+    currentRendition.on('rendered',(sec)=>{
+      const ch=book.navigation.toc.find(t=>t.href&&sec.href.includes(t.href.split('#')[0]));
+      document.getElementById('reader-chapter-title').textContent=ch?ch.label.trim():'';
+    });
+    currentRendition.on('selected',(cfiRange,contents)=>{
+      const sel=contents.window.getSelection(),text=sel.toString().trim();
+      if(text.length<3)return;
+      selectedText=text; selectedCfiRange=cfiRange;
+      showSelectionBar(text);
+    });
+    // Polling fallback: check iframe selection periodically to catch missed events
+    if(selectionPollTimer) clearInterval(selectionPollTimer);
+    selectionPollTimer=setInterval(()=>{
+      try{
+        const iframe=document.getElementById('reader-container').querySelector('iframe');
+        if(!iframe||!iframe.contentWindow)return;
+        const sel=iframe.contentWindow.getSelection();
+        const text=sel?sel.toString().trim():'';
+        if(text.length>=3 && text!==lastPolledText){
+          lastPolledText=text; selectedText=text;
+          showSelectionBar(text);
+        } else if(text.length<3 && lastPolledText){
+          lastPolledText='';
+          hideSelectionBar();
+        }
+      }catch(e){}
+    },500);
+    currentRendition.on('click',()=>{hideSelectionBar();});
+    showScreen('reader'); document.getElementById('reader-screen').classList.add('active'); hideLoading();
+  } catch(e) { hideLoading(); showToast('Error: '+e.message); }
+}
+function closeReader(){if(selectionPollTimer){clearInterval(selectionPollTimer);selectionPollTimer=null;}lastPolledText='';hideSelectionBar();if(currentRendition){currentRendition.destroy();currentRendition=null;}currentBook=null;document.getElementById('reader-container').innerHTML='';showScreen('library');}
+function prevPage(){if(currentRendition)currentRendition.prev();}
+function nextPage(){if(currentRendition)currentRendition.next();}
+let touchStartX=0;
+document.getElementById('reader-container').addEventListener('touchstart',e=>{touchStartX=e.changedTouches[0].screenX},{passive:true});
+document.getElementById('reader-container').addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-touchStartX;if(Math.abs(d)>50){d>0?prevPage():nextPage();}},{passive:true});
+
+// ===== SELECTION BAR =====
+let selectionPollTimer=null, lastPolledText='';
+function showSelectionBar(text){
+  const bar=document.getElementById('selection-bar');
+  const preview=document.getElementById('selection-preview');
+  const displayText=text.length>60?text.substring(0,60)+'…':text;
+  preview.textContent='"'+displayText+'"';
+  bar.classList.add('active');
+}
+function hideSelectionBar(){
+  document.getElementById('selection-bar').classList.remove('active');
+  selectedText=''; selectedCfiRange=null;
+}
+
+// ===== HIGHLIGHT & ADD CARD =====
+function highlightSelection(){
+  if(!selectedCfiRange||!currentRendition){
+    // Even without cfiRange, if we have text, still provide feedback
+    if(!selectedText){return;}
+  }
+  if(selectedCfiRange&&currentRendition){
+    currentRendition.annotations.highlight(selectedCfiRange,{},()=>{},'hl',{'fill':'rgba(255,243,196,0.4)','fill-opacity':'0.4','mix-blend-mode':'multiply'});
+  }
+  hideSelectionBar();
+  showToast('Highlighted');
+}
+function addToFlashcards(){
+  if(!selectedText)return;
+  flashcards.push({id:'fc_'+Date.now(),text:selectedText,source:currentBook?currentBook.title:'Unknown',createdAt:Date.now(),level:0,nextReview:null,lastReviewed:null,reviewCount:0});
+  saveFlashcards();
+  if(selectedCfiRange&&currentRendition){
+    currentRendition.annotations.highlight(selectedCfiRange,{},()=>{},'hl',{'fill':'rgba(255,243,196,0.4)','fill-opacity':'0.4','mix-blend-mode':'multiply'});
+  }
+  hideSelectionBar();
+  showToast('Added to Cards!');
+}
+
+// ===== FLASHCARDS SCREEN =====
+function renderSourceFilter() {
+  const el=document.getElementById('source-filter');
+  const sources=[...new Set(flashcards.map(c=>c.source))].sort();
+  if(sources.length<=1){el.innerHTML='';return;}
+  let html='<button class="source-tab'+(activeSourceFilter==='all'?' active':'')+'" onclick="setSourceFilter(\'all\')">All ('+getDueCards('all').length+')</button>';
+  sources.forEach(s=>{
+    const label=s.length>18?s.substring(0,18)+'…':s;
+    html+='<button class="source-tab'+(activeSourceFilter===s?' active':'')+'" onclick="setSourceFilter(\''+s.replace(/'/g,"\\'")+'\')">' +escapeHtml(label)+' ('+getDueCards(s).length+')</button>';
+  });
+  el.innerHTML=html;
+}
+function setSourceFilter(s){activeSourceFilter=s;renderFlashcards();}
+
+function renderReviewBanner(){
+  const banner=document.getElementById('review-banner');
+  const due=getDueCards(activeSourceFilter).length;
+  const total=flashcards.filter(c=>activeSourceFilter==='all'||c.source===activeSourceFilter).length;
+  if(!total){banner.style.display='none';return;}
+  banner.style.display='flex';
+  document.getElementById('review-banner-title').textContent=due>0?'Start Review':'All Caught Up!';
+  document.getElementById('review-banner-sub').textContent=due>0?due+' card'+(due>1?'s':'')+' due for review':'Next review later · '+total+' total cards';
+  banner.onclick=due>0?startReview:null;
+  banner.style.opacity=due>0?'1':'0.6';
+  banner.style.cursor=due>0?'pointer':'default';
+}
+
+function renderFlashcards(){
+  renderSourceFilter(); renderReviewBanner();
+  const list=document.getElementById('fc-list'),empty=document.getElementById('fc-empty'),count=document.getElementById('fc-count');
+  const filtered=flashcards.filter(c=>activeSourceFilter==='all'||c.source===activeSourceFilter);
+  count.textContent=filtered.length?filtered.length+' card'+(filtered.length>1?'s':''):'';
+  if(!filtered.length){empty.style.display='flex';list.innerHTML='';return;}
+  empty.style.display='none';
+  list.innerHTML=filtered.slice().reverse().map(c=>{
+    const lv=getLevelLabel(c), due=isDue(c)?'Due now':'Next: '+formatNextReview(c.nextReview);
+    const noteHtml=c.note?'<div style="margin-top:8px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px;font-family:var(--font-ui);font-size:13px;color:var(--text-secondary);line-height:1.5;font-style:normal">'+escapeHtml(c.note)+'</div>':'';
+    return '<div class="fc-card"><div class="fc-card-text">"'+escapeHtml(c.text)+'"</div>'+noteHtml+'<div class="fc-card-meta"><div class="fc-card-source">'+escapeHtml(c.source)+' · '+due+'</div><span class="fc-card-level '+lv.cls+'">'+lv.text+'</span></div><div class="fc-card-actions"><button class="fc-card-btn" onclick="openEditCard(\''+c.id+'\')" title="Edit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="fc-card-btn" onclick="deleteFlashcard(\''+c.id+'\')" title="Delete"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>';
+  }).join('');
+}
+function deleteFlashcard(id){flashcards=flashcards.filter(c=>c.id!==id);saveFlashcards();renderFlashcards();showToast('Card removed');}
+
+// ===== CARD EDITING =====
+function openEditCard(id){
+  const card=flashcards.find(c=>c.id===id);
+  if(!card)return;
+  editingCardId=id;
+  document.getElementById('edit-card-text').value=card.text;
+  document.getElementById('edit-card-note').value=card.note||'';
+  document.getElementById('edit-card-source').value=card.source;
+  document.getElementById('edit-modal').classList.add('active');
+}
+function closeEditModal(e){
+  if(e&&e.target&&e.target!==document.getElementById('edit-modal'))return;
+  document.getElementById('edit-modal').classList.remove('active');
+  editingCardId=null;
+}
+function saveCardEdit(){
+  if(!editingCardId)return;
+  const card=flashcards.find(c=>c.id===editingCardId);
+  if(!card)return;
+  card.text=document.getElementById('edit-card-text').value.trim();
+  card.note=document.getElementById('edit-card-note').value.trim();
+  card.source=document.getElementById('edit-card-source').value.trim();
+  saveFlashcards();
+  closeEditModal();
+  renderFlashcards();
+  showToast('Card updated');
+}
+
+// ===== REVIEW MODE =====
+function startReview(){
+  const due=getDueCards(activeSourceFilter);
+  if(!due.length){showToast('No cards due for review');return;}
+  reviewQueue=due.sort(()=>Math.random()-.5);
+  reviewIndex=0; reviewStats={know:0,fuzzy:0,forgot:0};
+  showScreen('review'); document.getElementById('review-screen').classList.add('active');
+  showReviewCard();
+}
+
+function showReviewCard(){
+  const body=document.getElementById('review-body');
+  if(reviewIndex>=reviewQueue.length){showReviewComplete();return;}
+  const card=reviewQueue[reviewIndex], total=reviewQueue.length;
+  const progress=(reviewIndex/total)*100;
+  document.getElementById('review-progress-fill').style.width=progress+'%';
+  document.getElementById('review-counter').textContent=(reviewIndex+1)+'/'+total;
+
+  const knowLv=(card.level||0)+1, fuzzyLv=Math.max(0,(card.level||0)-1), forgotLv=0;
+  const noteHtml=card.note?'<div style="margin-top:12px;padding:10px 14px;background:var(--bg-secondary);border-radius:10px;font-family:var(--font-ui);font-size:13px;color:var(--text-secondary);line-height:1.5;font-style:normal;text-align:left;width:100%">'+escapeHtml(card.note)+'</div>':'';
+  body.innerHTML='<div class="review-card-area"><div class="review-card"><div class="review-card-interval">Level '+(card.level||0)+' · reviewed '+(card.reviewCount||0)+'×</div><div class="review-card-text">"'+escapeHtml(card.text)+'"</div>'+noteHtml+'<div class="review-card-source">'+escapeHtml(card.source)+'</div></div></div><div class="review-actions"><button class="review-btn btn-forgot" onclick="answerReview(\'forgot\')">忘记<span class="review-btn-sub">'+formatInterval(forgotLv)+'</span></button><button class="review-btn btn-fuzzy" onclick="answerReview(\'fuzzy\')">模糊<span class="review-btn-sub">'+formatInterval(fuzzyLv)+'</span></button><button class="review-btn btn-know" onclick="answerReview(\'know\')">认识<span class="review-btn-sub">'+formatInterval(knowLv)+'</span></button></div>';
+}
+
+function answerReview(answer){
+  processAnswer(reviewQueue[reviewIndex],answer);
+  reviewStats[answer]++;
+  reviewIndex++;
+  showReviewCard();
+}
+
+function showReviewComplete(){
+  const body=document.getElementById('review-body'),total=reviewQueue.length;
+  document.getElementById('review-progress-fill').style.width='100%';
+  document.getElementById('review-counter').textContent=total+'/'+total;
+  body.innerHTML='<div class="review-complete"><div class="review-complete-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div><h2>Review Complete!</h2><p>You reviewed '+total+' card'+(total>1?'s':'')+' in this session.</p><div class="review-complete-stats"><div class="stat-item"><div class="stat-num stat-green">'+reviewStats.know+'</div><div class="stat-label">认识</div></div><div class="stat-item"><div class="stat-num stat-orange">'+reviewStats.fuzzy+'</div><div class="stat-label">模糊</div></div><div class="stat-item"><div class="stat-num stat-red">'+reviewStats.forgot+'</div><div class="stat-label">忘记</div></div></div><button class="review-done-btn" onclick="exitReview()">Done</button></div>';
+}
+
+function exitReview(){showScreen('flashcard');}
+
+// ===== MIGRATE & INIT =====
+flashcards.forEach(c=>{
+  if(c.level===undefined)c.level=0;
+  if(c.nextReview===undefined)c.nextReview=null;
+  if(c.lastReviewed===undefined)c.lastReviewed=null;
+  if(c.reviewCount===undefined)c.reviewCount=0;
+  if(c.note===undefined)c.note='';
+});
+saveFlashcards();
+renderLibrary();
+</script>
+</body>
+</html>
