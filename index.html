@@ -446,8 +446,16 @@ function saveAppWorkerUrl() {
   const status = document.getElementById('settings-worker-status');
   status.textContent = 'Testing...';
   status.style.color = 'var(--text-muted)';
-  fetch(url, { method: 'GET' })
-    .then(r => r.json())
+
+  // Add timeout for mobile
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  fetch(url, { method: 'GET', signal: controller.signal })
+    .then(r => {
+      clearTimeout(timeout);
+      return r.json();
+    })
     .then(data => {
       if (data.status === 'ok') {
         localStorage.setItem('rc_worker_url', url);
@@ -455,13 +463,19 @@ function saveAppWorkerUrl() {
         status.style.color = 'var(--green)';
         showToast('API server connected!');
       } else {
-        status.textContent = '✗ Unexpected response';
-        status.style.color = 'var(--red)';
+        // Response ok but unexpected — save anyway
+        localStorage.setItem('rc_worker_url', url);
+        status.textContent = '⚠ Saved (unexpected response)';
+        status.style.color = 'var(--orange)';
       }
     })
     .catch(err => {
-      status.textContent = '✗ Cannot connect';
-      status.style.color = 'var(--red)';
+      clearTimeout(timeout);
+      // Save anyway — connection test might fail on mobile but actual requests may work
+      localStorage.setItem('rc_worker_url', url);
+      status.textContent = '⚠ Saved (test timed out — try importing a URL to verify)';
+      status.style.color = 'var(--orange)';
+      showToast('URL saved. Try importing an article to test.');
     });
 }
 
