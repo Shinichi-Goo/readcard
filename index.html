@@ -306,6 +306,13 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
       <input type="url" id="url-input" placeholder="https://example.com/article">
       <button onclick="handleUrlImport()">Go</button>
     </div>
+    <div id="worker-setup" style="display:none;margin-top:12px;padding:14px;background:var(--bg-primary);border-radius:var(--radius);border:1.5px solid var(--accent)">
+      <div style="font-family:var(--font-ui);font-size:13px;color:var(--text-secondary);margin-bottom:8px">Enter your Cloudflare Worker URL to enable URL import:</div>
+      <div style="display:flex;gap:8px">
+        <input type="url" id="worker-url-input" placeholder="https://readcard-api.xxx.workers.dev" style="flex:1;padding:10px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-card);font-family:var(--font-ui);font-size:13px;color:var(--text-primary);outline:none">
+        <button onclick="saveWorkerUrl()" style="padding:10px 16px;border-radius:10px;border:none;background:var(--accent);color:white;font-family:var(--font-ui);font-weight:600;font-size:13px;cursor:pointer">Save</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -382,6 +389,10 @@ let reviewQueue = [], reviewIndex = 0, reviewStats = {know:0,fuzzy:0,forgot:0};
 let activeSourceFilter = 'all';
 let readerSettings = JSON.parse(localStorage.getItem('rc_reader_settings') || '{"fontSize":16,"lineHeight":1.8,"spread":"none"}');
 let editingCardId = null;
+
+// ===== CONFIG =====
+function getWorkerUrl() { return localStorage.getItem('rc_worker_url') || ''; }
+
 
 // ===== SPACED REPETITION =====
 // Intervals in minutes: immediate, 1min, 10min, 1day, 3days, 7days, 15days, 30days, 60days
@@ -530,7 +541,98 @@ async function handleEpubImport(event) {
   event.target.value = '';
 }
 
-function handleUrlImport() { showToast('URL import coming in Phase 2!'); closeImportModal({target:document.getElementById('import-modal')}); }
+async function handleUrlImport() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) { showToast('Please enter a URL'); return; }
+
+  const workerUrl = getWorkerUrl();
+  if (!workerUrl) {
+    document.getElementById('worker-setup').style.display = 'block';
+    document.getElementById('worker-url-input').focus();
+    showToast('Please set up your Worker URL first');
+    return;
+  }
+
+  closeImportModal({target:document.getElementById('import-modal')});
+  showLoading();
+
+  try {
+    console.log('Fetching from worker:', workerUrl + '/extract');
+    console.log('Target URL:', url);
+
+    const resp = await fetch(workerUrl + '/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    });
+
+    console.log('Worker response status:', resp.status);
+    const text = await resp.text();
+    console.log('Worker response body:', text);
+
+    let data;
+    try { data = JSON.parse(text); } catch(e) {
+      throw new Error('Worker returned invalid response: ' + text.substring(0, 100));
+    }
+
+    if (data.error) throw new Error(data.error);
+    if (!data.content || data.content.length < 50) throw new Error('Extracted content too short (' + (data.content||'').length + ' chars)');
+
+    const articleId = 'web_' + Date.now();
+    const article = {
+      id: articleId,
+      title: data.title || 'Web Article',
+      author: data.source || 'Web',
+      coverUrl: null,
+      progress: 0,
+      currentCfi: null,
+      addedAt: Date.now(),
+      type: 'web',
+      url: url,
+      content: data.content
+    };
+
+    library.push(article);
+    saveLibrary();
+    renderLibrary();
+    hideLoading();
+    showToast('Article imported!');
+  } catch (err) {
+    hideLoading();
+    console.error('URL import error:', err);
+    // Show more specific error
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      showToast('Cannot connect to Worker. Check URL in settings.');
+    } else {
+      showToast('Error: ' + err.message);
+    }
+  }
+  document.getElementById('url-input').value = '';
+}
+
+function saveWorkerUrl() {
+  let url = document.getElementById('worker-url-input').value.trim().replace(/\/+$/, '');
+  if (!url) { showToast('Please enter a URL'); return; }
+  // Ensure https://
+  if (!url.startsWith('http')) url = 'https://' + url;
+  // Test the connection first
+  showToast('Testing connection...');
+  fetch(url, { method: 'GET' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'ok') {
+        localStorage.setItem('rc_worker_url', url);
+        document.getElementById('worker-setup').style.display = 'none';
+        showToast('Connected! Now try importing a URL.');
+      } else {
+        showToast('Worker responded but seems wrong. Check the URL.');
+      }
+    })
+    .catch(err => {
+      console.error('Worker test error:', err);
+      showToast('Cannot connect to: ' + url);
+    });
+}
 
 // ===== IndexedDB =====
 function openDB() { return new Promise((res,rej) => { const r = indexedDB.open('ReadCardDB',1); r.onupgradeneeded=()=>r.result.createObjectStore('books'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
@@ -544,16 +646,32 @@ function renderLibrary() {
   const list=document.getElementById('book-list'),empty=document.getElementById('empty-state');
   if (!library.length) { empty.style.display='flex'; list.innerHTML=''; return; }
   empty.style.display='none';
-  list.innerHTML = library.map((b,i) => '<div class="book-card" onclick="openBook(\''+b.id+'\')"><div class="book-cover">'+(b.coverUrl?'<img src="'+b.coverUrl+'" alt="">':'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>')+'</div><div class="book-info"><div class="book-title">'+escapeHtml(b.title)+'</div><div class="book-author">'+escapeHtml(b.author)+'</div><div class="book-progress"><div class="book-progress-bar" style="width:'+Math.round((b.progress||0)*100)+'%"></div></div></div><button class="book-delete" onclick="event.stopPropagation();deleteBook('+i+')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>').join('');
+  list.innerHTML = library.map((b,i) => {
+    const isWeb = b.type === 'web';
+    const coverIcon = isWeb
+      ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
+      : '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+    const cover = b.coverUrl ? '<img src="'+b.coverUrl+'" alt="">' : coverIcon;
+    return '<div class="book-card" onclick="openBook(\''+b.id+'\')"><div class="book-cover">'+cover+'</div><div class="book-info"><div class="book-title">'+escapeHtml(b.title)+'</div><div class="book-author">'+escapeHtml(b.author)+'</div><div class="book-progress"><div class="book-progress-bar" style="width:'+Math.round((b.progress||0)*100)+'%"></div></div></div><button class="book-delete" onclick="event.stopPropagation();deleteBook('+i+')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>';
+  }).join('');
 }
 async function deleteBook(i) { const b=library[i]; if(b) await deleteBookData(b.id); library.splice(i,1); saveLibrary(); renderLibrary(); showToast('Book removed'); }
 
 // ===== READER =====
 async function openBook(bookId) {
+  currentBook=library.find(b=>b.id===bookId);
+  if(!currentBook){showToast('Book not found');return;}
+
+  // Web article — render as scrollable HTML
+  if(currentBook.type==='web'){
+    openWebArticle(currentBook);
+    return;
+  }
+
+  // EPUB
   showLoading();
   try {
     const ab=await getBookData(bookId); if(!ab){hideLoading();showToast('Book data not found');return;}
-    currentBook=library.find(b=>b.id===bookId);
     const book=ePub(ab), container=document.getElementById('reader-container');
     container.innerHTML='';
     currentRendition=book.renderTo(container,{width:'100%',height:'100%',spread:readerSettings.spread,flow:'paginated'});
@@ -576,7 +694,6 @@ async function openBook(bookId) {
       selectedText=text; selectedCfiRange=cfiRange;
       showSelectionBar(text);
     });
-    // Polling fallback: check iframe selection periodically to catch missed events
     if(selectionPollTimer) clearInterval(selectionPollTimer);
     selectionPollTimer=setInterval(()=>{
       try{
@@ -597,7 +714,42 @@ async function openBook(bookId) {
     showScreen('reader'); document.getElementById('reader-screen').classList.add('active'); hideLoading();
   } catch(e) { hideLoading(); showToast('Error: '+e.message); }
 }
-function closeReader(){if(selectionPollTimer){clearInterval(selectionPollTimer);selectionPollTimer=null;}lastPolledText='';hideSelectionBar();if(currentRendition){currentRendition.destroy();currentRendition=null;}currentBook=null;document.getElementById('reader-container').innerHTML='';showScreen('library');}
+
+function openWebArticle(article){
+  const container=document.getElementById('reader-container');
+  const isDark=document.documentElement.getAttribute('data-theme')==='dark';
+  const fs=readerSettings.fontSize;
+  const lh=readerSettings.lineHeight;
+
+  // Build readable HTML
+  const paragraphs=article.content.split(/\n\n+/).map(p=>p.trim()).filter(p=>p.length>0);
+  const bodyHtml=paragraphs.map(p=>'<p>'+escapeHtml(p)+'</p>').join('');
+
+  container.innerHTML='<div id="web-reader" style="overflow-y:auto;height:100%;padding:24px 20px 60px;-webkit-overflow-scrolling:touch;font-family:var(--font-body);font-size:'+fs+'px;line-height:'+lh+';color:var(--text-primary)"><h1 style="font-family:var(--font-ui);font-size:22px;font-weight:600;margin-bottom:6px;line-height:1.3">'+escapeHtml(article.title)+'</h1><div style="font-family:var(--font-ui);font-size:13px;color:var(--text-muted);margin-bottom:24px">'+escapeHtml(article.author)+'</div>'+bodyHtml+'</div>';
+
+  document.getElementById('reader-chapter-title').textContent=article.title;
+  document.getElementById('reader-progress').textContent='';
+  document.getElementById('reader-footer').style.display='none';
+
+  // Selection detection for web articles
+  const webReader=document.getElementById('web-reader');
+  if(selectionPollTimer) clearInterval(selectionPollTimer);
+  selectionPollTimer=setInterval(()=>{
+    const sel=window.getSelection();
+    const text=sel?sel.toString().trim():'';
+    if(text.length>=3 && text!==lastPolledText){
+      lastPolledText=text; selectedText=text; selectedCfiRange=null;
+      showSelectionBar(text);
+    } else if(text.length<3 && lastPolledText){
+      lastPolledText='';
+      hideSelectionBar();
+    }
+  },400);
+
+  showScreen('reader');
+  document.getElementById('reader-screen').classList.add('active');
+}
+function closeReader(){if(selectionPollTimer){clearInterval(selectionPollTimer);selectionPollTimer=null;}lastPolledText='';hideSelectionBar();if(currentRendition){currentRendition.destroy();currentRendition=null;}currentBook=null;document.getElementById('reader-container').innerHTML='';document.getElementById('reader-footer').style.display='';showScreen('library');}
 function prevPage(){if(currentRendition)currentRendition.prev();}
 function nextPage(){if(currentRendition)currentRendition.next();}
 let touchStartX=0;
