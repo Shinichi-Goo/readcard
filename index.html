@@ -138,8 +138,18 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
 .fc-card-actions{display:flex;gap:6px;position:absolute;top:12px;right:12px}
 .fc-card-btn{border:none;background:none;color:var(--text-muted);cursor:pointer;padding:4px;opacity:.5;transition:opacity .2s}
 .fc-card-btn:active{opacity:1}
-.note-content b{color:var(--text-primary)}
-.note-content h3{font-weight:600;font-size:14px;color:var(--text-primary);margin:12px 0 6px}
+
+/* AI Note Sections */
+.ai-note{margin-top:12px;border-top:1px solid var(--border);padding-top:12px}
+.ai-note-section{margin-bottom:14px}
+.ai-note-section:last-child{margin-bottom:0}
+.ai-note-header{font-family:var(--font-ui);font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.ai-note-body{font-family:var(--font-ui);font-size:13px;line-height:1.7;color:var(--text-secondary)}
+.ai-note-body b{color:var(--text-primary);font-weight:600}
+.vocab-item{display:flex;gap:6px;padding:3px 0}
+.vocab-word{font-family:var(--font-ui);font-weight:600;color:var(--accent);white-space:nowrap}
+.vocab-def{color:var(--text-secondary)}
+.plain-note{margin-top:8px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px;font-family:var(--font-ui);font-size:13px;color:var(--text-secondary);line-height:1.6}
 
 /* CARDS SCREEN */
 #flashcard-screen{padding-top:var(--safe-top)}
@@ -260,7 +270,10 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
 <div id="flashcard-screen" class="screen">
   <div class="fc-header">
     <h1>Cards</h1>
-    <span id="fc-count" style="font-family:var(--font-ui);font-size:14px;color:var(--text-muted)"></span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="fc-count" style="font-family:var(--font-ui);font-size:14px;color:var(--text-muted)"></span>
+      <button class="icon-btn" onclick="openAppSettings()" style="width:32px;height:32px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
   </div>
   <div class="review-banner" id="review-banner" onclick="startReview()" style="display:none">
     <div class="review-banner-left">
@@ -384,6 +397,21 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
   </div>
 </div>
 
+<div class="modal-overlay" id="app-settings-modal" onclick="closeAppSettings(event)">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Settings</div>
+    <div style="margin-bottom:16px">
+      <label style="display:block;font-family:var(--font-ui);font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">API Server URL</label>
+      <div style="display:flex;gap:8px">
+        <input type="url" id="settings-worker-url" placeholder="https://readcard-api.xxx.workers.dev" style="flex:1;padding:10px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg-primary);font-family:var(--font-ui);font-size:13px;color:var(--text-primary);outline:none">
+        <button onclick="saveAppWorkerUrl()" style="padding:10px 16px;border-radius:10px;border:none;background:var(--accent);color:white;font-family:var(--font-ui);font-weight:600;font-size:13px;cursor:pointer">Save</button>
+      </div>
+      <div id="settings-worker-status" style="font-family:var(--font-ui);font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
 <div class="loading-overlay" id="loading"><div class="loading-spinner"></div></div>
 <div class="toast" id="toast"></div>
 
@@ -399,6 +427,43 @@ let editingCardId = null;
 
 // ===== CONFIG =====
 function getWorkerUrl() { return localStorage.getItem('rc_worker_url') || ''; }
+
+function openAppSettings() {
+  document.getElementById('app-settings-modal').classList.add('active');
+  document.getElementById('settings-worker-url').value = getWorkerUrl();
+  const status = document.getElementById('settings-worker-status');
+  status.textContent = getWorkerUrl() ? '✓ Connected' : 'Not configured';
+  status.style.color = getWorkerUrl() ? 'var(--green)' : 'var(--text-muted)';
+}
+function closeAppSettings(e) {
+  if (e && e.target !== document.getElementById('app-settings-modal')) return;
+  document.getElementById('app-settings-modal').classList.remove('active');
+}
+function saveAppWorkerUrl() {
+  let url = document.getElementById('settings-worker-url').value.trim().replace(/\/+$/, '');
+  if (!url) { showToast('Please enter a URL'); return; }
+  if (!url.startsWith('http')) url = 'https://' + url;
+  const status = document.getElementById('settings-worker-status');
+  status.textContent = 'Testing...';
+  status.style.color = 'var(--text-muted)';
+  fetch(url, { method: 'GET' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'ok') {
+        localStorage.setItem('rc_worker_url', url);
+        status.textContent = '✓ Connected and saved!';
+        status.style.color = 'var(--green)';
+        showToast('API server connected!');
+      } else {
+        status.textContent = '✗ Unexpected response';
+        status.style.color = 'var(--red)';
+      }
+    })
+    .catch(err => {
+      status.textContent = '✗ Cannot connect';
+      status.style.color = 'var(--red)';
+    });
+}
 
 
 // ===== SPACED REPETITION =====
@@ -544,25 +609,95 @@ function showLoading() { document.getElementById('loading').classList.add('activ
 function hideLoading() { document.getElementById('loading').classList.remove('active'); }
 function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 
-// Render note: if it contains HTML tags (from AI), render as HTML; otherwise escape
+// Render note: parse AI HTML into structured sections, or render plain text
 function renderNote(note) {
   if (!note) return '';
-  // Check if note contains HTML tags from AI output
-  if (/<(?:h3|b|br|p|ul|li|ol|em|strong)[>\s/]/i.test(note)) {
-    // Sanitize: only allow safe tags
-    return note
-      .replace(/<(?!\/?(h3|b|br|p|ul|li|ol|em|strong)\b)[^>]*>/gi, '')
-      .replace(/<h3>/gi, '<div style="font-weight:600;font-size:14px;color:var(--text-primary);margin:12px 0 6px;padding-top:4px">')
-      .replace(/<\/h3>/gi, '</div>');
+
+  // Check if this is AI-generated content (contains our h3 headers)
+  if (/<h3>/i.test(note) || /## /.test(note)) {
+    return renderAiNote(note);
   }
-  // Plain text: convert markdown-style formatting as fallback
+
+  // Plain text note
   let html = escapeHtml(note);
-  // Convert ## headers
-  html = html.replace(/^## (.+)$/gm, '<div style="font-weight:600;font-size:14px;color:var(--text-primary);margin:12px 0 6px">$1</div>');
-  // Convert **bold**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<b style="color:var(--text-primary)">$1</b>');
-  // Convert line breaks
+  html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   html = html.replace(/\n/g, '<br>');
+  return '<div class="plain-note">' + html + '</div>';
+}
+
+function renderAiNote(raw) {
+  // Normalize: convert markdown ## to <h3> if needed
+  let text = raw
+    .replace(/## /g, '<h3>')
+    .replace(/<\/h3>/gi, '</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
+  // Split into sections by <h3>
+  const parts = text.split(/<h3>/i).filter(p => p.trim());
+  let html = '<div class="ai-note">';
+
+  for (const part of parts) {
+    // Extract header text
+    const headerEnd = part.indexOf('</h3>');
+    let header, body;
+    if (headerEnd !== -1) {
+      header = part.substring(0, headerEnd).replace(/<[^>]*>/g, '').trim();
+      body = part.substring(headerEnd + 5).trim();
+    } else {
+      // No closing tag, first line is header
+      const lines = part.split(/\n|<br\s*\/?>/i);
+      header = lines[0].replace(/<[^>]*>/g, '').trim();
+      body = lines.slice(1).join('<br>').trim();
+    }
+
+    if (!header && !body) continue;
+
+    html += '<div class="ai-note-section">';
+    if (header) {
+      html += '<div class="ai-note-header">' + escapeHtml(header) + '</div>';
+    }
+
+    if (body) {
+      // Check if this is a vocabulary section
+      if (/vocabulary|词汇/i.test(header)) {
+        html += renderVocabSection(body);
+      } else {
+        // Clean up body: strip stray tags, normalize line breaks
+        let cleanBody = body
+          .replace(/<br\s*\/?>\s*<br\s*\/?>/gi, '<br>')
+          .replace(/^<br\s*\/?>|<br\s*\/?>$/gi, '')
+          .replace(/<(?!\/?(b|br|em|strong)\b)[^>]*>/gi, '')
+          .trim();
+        html += '<div class="ai-note-body">' + cleanBody + '</div>';
+      }
+    }
+
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderVocabSection(body) {
+  // Parse vocabulary items: <b>word</b> — definition
+  const items = body.split(/<br\s*\/?>/i).filter(l => l.trim());
+  let html = '<div class="ai-note-body">';
+
+  for (const item of items) {
+    // Extract word and definition
+    const match = item.match(/<b>(.+?)<\/b>\s*[—–\-]\s*(.*)/i);
+    if (match) {
+      html += '<div class="vocab-item"><span class="vocab-word">' + escapeHtml(match[1]) + '</span><span class="vocab-def">— ' + escapeHtml(match[2].replace(/<[^>]*>/g, '')) + '</span></div>';
+    } else {
+      const trimmed = item.replace(/<[^>]*>/g, '').trim();
+      if (trimmed) {
+        html += '<div class="vocab-item">' + escapeHtml(trimmed) + '</div>';
+      }
+    }
+  }
+
+  html += '</div>';
   return html;
 }
 
@@ -876,7 +1011,7 @@ function renderFlashcards(){
   empty.style.display='none';
   list.innerHTML=filtered.slice().reverse().map(c=>{
     const lv=getLevelLabel(c), due=isDue(c)?'Due now':'Next: '+formatNextReview(c.nextReview);
-    const noteHtml=c.note?'<div style="margin-top:8px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px;font-family:var(--font-ui);font-size:13px;color:var(--text-secondary);line-height:1.6;font-style:normal">'+renderNote(c.note)+'</div>':'';
+    const noteHtml=c.note?renderNote(c.note):'';
     return '<div class="fc-card"><div class="fc-card-text">"'+escapeHtml(c.text)+'"</div>'+noteHtml+'<div class="fc-card-meta"><div class="fc-card-source">'+escapeHtml(c.source)+' · '+due+'</div><span class="fc-card-level '+lv.cls+'">'+lv.text+'</span></div><div class="fc-card-actions"><button class="fc-card-btn" onclick="openEditCard(\''+c.id+'\')" title="Edit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="fc-card-btn" onclick="deleteFlashcard(\''+c.id+'\')" title="Delete"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>';
   }).join('');
 }
@@ -1027,7 +1162,7 @@ function showReviewCard(){
   document.getElementById('review-counter').textContent=(reviewIndex+1)+'/'+total;
 
   const knowLv=(card.level||0)+1, fuzzyLv=Math.max(0,(card.level||0)-1), forgotLv=0;
-  const noteHtml=card.note?'<div style="margin-top:12px;padding:10px 14px;background:var(--bg-secondary);border-radius:10px;font-family:var(--font-ui);font-size:13px;color:var(--text-secondary);line-height:1.6;font-style:normal;text-align:left;width:100%">'+renderNote(card.note)+'</div>':'';
+  const noteHtml=card.note?'<div style="text-align:left;width:100%">'+renderNote(card.note)+'</div>':'';
   body.innerHTML='<div class="review-card-area"><div class="review-card"><div class="review-card-interval">Level '+(card.level||0)+' · reviewed '+(card.reviewCount||0)+'×</div><div class="review-card-text">"'+escapeHtml(card.text)+'"</div>'+noteHtml+'<div class="review-card-source">'+escapeHtml(card.source)+'</div></div></div><div class="review-actions"><button class="review-btn btn-forgot" onclick="answerReview(\'forgot\')">忘记<span class="review-btn-sub">'+formatInterval(forgotLv)+'</span></button><button class="review-btn btn-fuzzy" onclick="answerReview(\'fuzzy\')">模糊<span class="review-btn-sub">'+formatInterval(fuzzyLv)+'</span></button><button class="review-btn btn-know" onclick="answerReview(\'know\')">认识<span class="review-btn-sub">'+formatInterval(knowLv)+'</span></button></div>';
 }
 
