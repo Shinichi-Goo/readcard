@@ -386,7 +386,7 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
   </div>
 </div>
 
-<div class="selection-bar" id="selection-bar">
+<div class="selection-bar" id="selection-bar" onmousedown="event.preventDefault()" ontouchstart="">
   <div class="selection-bar-preview" id="selection-preview">"..."</div>
   <div class="selection-bar-row">
     <div class="sel-colors">
@@ -501,6 +501,8 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
 let library = JSON.parse(localStorage.getItem('rc_library') || '[]');
 let flashcards = JSON.parse(localStorage.getItem('rc_flashcards') || '[]');
 let currentBook = null, currentRendition = null, selectedText = '', selectedCfiRange = null;
+let savedRange = null;       // Saved browser Range for highlighting after selection is lost
+let savedRangeSource = null; // 'web' or 'epub' — which context the range belongs to
 let reviewQueue = [], reviewIndex = 0, reviewStats = {know:0,fuzzy:0,forgot:0};
 let activeSourceFilter = 'all';
 let activeLibraryCollection = 'all';
@@ -1165,10 +1167,31 @@ function showSelectionBar(text){
   const displayText=text.length>50?text.substring(0,50)+'…':text;
   preview.textContent='"'+displayText+'"';
   bar.classList.add('active');
+
+  // Save the Range so we can use it even after the selection is cleared by button clicks
+  try{
+    const webReader=document.getElementById('web-reader');
+    if(webReader){
+      const sel=window.getSelection();
+      if(sel&&sel.rangeCount>0){
+        savedRange=sel.getRangeAt(0).cloneRange();
+        savedRangeSource='web';
+      }
+    } else {
+      const iframe=document.getElementById('reader-container').querySelector('iframe');
+      if(iframe&&iframe.contentWindow){
+        const sel=iframe.contentWindow.getSelection();
+        if(sel&&sel.rangeCount>0){
+          savedRange=sel.getRangeAt(0).cloneRange();
+          savedRangeSource='epub';
+        }
+      }
+    }
+  }catch(e){ console.log('Range save error:', e); }
 }
 function hideSelectionBar(){
   document.getElementById('selection-bar').classList.remove('active');
-  selectedText=''; selectedCfiRange=null;
+  selectedText=''; selectedCfiRange=null; savedRange=null; savedRangeSource=null;
 }
 
 // ===== HIGHLIGHT & ADD CARD =====
@@ -1189,81 +1212,73 @@ function applyHighlight(cfiRange, color, hlId){
   if(hlId) epubAnnotationMap[hlId]={cfiRange,annotClass};
 }
 
-// Apply highlight using browser Selection API (works for both EPUB iframe and web articles)
+// Apply highlight using saved Range (immune to selection being cleared by button clicks)
 function applySelectionHighlight(color){
   const c=HIGHLIGHT_COLORS[color]||HIGHLIGHT_COLORS.yellow;
   const hlStyle='background:'+c.bg+';border-bottom:2px solid '+c.border+';border-radius:2px;cursor:pointer;padding:0 1px;';
+  const hlId='hl_'+Date.now();
 
-  // Try web reader first (direct DOM)
-  const webReader=document.getElementById('web-reader');
-  if(webReader){
-    const sel=window.getSelection();
-    if(!sel||sel.rangeCount===0||sel.toString().trim().length<3)return false;
-    const range=sel.getRangeAt(0);
-    const hlId='hl_'+Date.now();
-    const span=document.createElement('span');
-    span.className='text-highlight';
-    span.dataset.hlId=hlId;
-    span.dataset.color=color;
-    span.style.cssText=hlStyle;
-    span.onclick=function(e){e.stopPropagation();promptRemoveHighlight(hlId);};
-    try{
-      range.surroundContents(span);
-      sel.removeAllRanges();
-      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent,color:color,timestamp:Date.now()});
-      saveHighlights();
-      return true;
-    }catch(e){
-      const fragment=range.extractContents();
-      span.appendChild(fragment);
-      range.insertNode(span);
-      sel.removeAllRanges();
-      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent,color:color,timestamp:Date.now()});
-      saveHighlights();
-      return true;
-    }
-  }
-
-  // Try EPUB iframe
-  if(currentRendition){
-    const iframe=document.getElementById('reader-container').querySelector('iframe');
-    if(!iframe||!iframe.contentWindow)return false;
-    const sel=iframe.contentWindow.getSelection();
-    if(!sel||sel.rangeCount===0||sel.toString().trim().length<3)return false;
-
-    // Method 1: use cfiRange if available
-    if(selectedCfiRange){
-      const hlId='hl_'+Date.now();
-      applyHighlight(selectedCfiRange,color,hlId);
-      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:sel.toString(),color:color,cfiRange:selectedCfiRange,timestamp:Date.now()});
-      saveHighlights();
-      sel.removeAllRanges();
-      return true;
-    }
-
-    // Method 2: directly manipulate iframe DOM
-    const range=sel.getRangeAt(0);
-    const hlId='hl_'+Date.now();
-    const doc=iframe.contentDocument;
-    const span=doc.createElement('span');
-    span.style.cssText=hlStyle;
-    span.dataset.hlId=hlId;
-    span.dataset.color=color;
-    span.addEventListener('click',function(e){
-      e.stopPropagation();
-      window.parent.postMessage({type:'hl-click',hlId:hlId},'*');
-    });
-    try{
-      range.surroundContents(span);
-    }catch(e){
-      const fragment=range.extractContents();
-      span.appendChild(fragment);
-      range.insertNode(span);
-    }
-    sel.removeAllRanges();
-    highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent,color:color,timestamp:Date.now()});
+  // EPUB with cfiRange: use epub.js annotation API (most reliable for EPUB)
+  if(selectedCfiRange&&currentRendition){
+    applyHighlight(selectedCfiRange,color,hlId);
+    highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:selectedText,color:color,cfiRange:selectedCfiRange,timestamp:Date.now()});
     saveHighlights();
     return true;
+  }
+
+  // Use savedRange for DOM-based highlighting
+  if(!savedRange){
+    console.log('No saved range available');
+    return false;
+  }
+
+  try{
+    if(savedRangeSource==='web'){
+      // Web article: manipulate main document DOM
+      const span=document.createElement('span');
+      span.className='text-highlight';
+      span.dataset.hlId=hlId;
+      span.dataset.color=color;
+      span.style.cssText=hlStyle;
+      span.onclick=function(e){e.stopPropagation();promptRemoveHighlight(hlId);};
+      try{
+        savedRange.surroundContents(span);
+      }catch(e){
+        const fragment=savedRange.extractContents();
+        span.appendChild(fragment);
+        savedRange.insertNode(span);
+      }
+      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent||selectedText,color:color,timestamp:Date.now()});
+      saveHighlights();
+      return true;
+
+    } else if(savedRangeSource==='epub'){
+      // EPUB iframe: manipulate iframe DOM
+      const iframe=document.getElementById('reader-container').querySelector('iframe');
+      if(!iframe||!iframe.contentDocument) return false;
+      const doc=iframe.contentDocument;
+      const span=doc.createElement('span');
+      span.style.cssText=hlStyle;
+      span.dataset.hlId=hlId;
+      span.dataset.color=color;
+      span.addEventListener('click',function(e){
+        e.stopPropagation();
+        window.parent.postMessage({type:'hl-click',hlId:hlId},'*');
+      });
+      try{
+        savedRange.surroundContents(span);
+      }catch(e){
+        const fragment=savedRange.extractContents();
+        span.appendChild(fragment);
+        savedRange.insertNode(span);
+      }
+      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent||selectedText,color:color,timestamp:Date.now()});
+      saveHighlights();
+      return true;
+    }
+  }catch(e){
+    console.log('Highlight apply error:', e);
+    return false;
   }
   return false;
 }
