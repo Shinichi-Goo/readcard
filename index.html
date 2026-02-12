@@ -386,20 +386,20 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
   </div>
 </div>
 
-<div class="selection-bar" id="selection-bar" onmousedown="event.preventDefault()" ontouchstart="">
+<div class="selection-bar" id="selection-bar">
   <div class="selection-bar-preview" id="selection-preview">"..."</div>
   <div class="selection-bar-row">
     <div class="sel-colors">
-      <div class="sel-color sel-color-yellow active" onclick="setHighlightColor('yellow')" title="Yellow"></div>
-      <div class="sel-color sel-color-blue" onclick="setHighlightColor('blue')" title="Blue"></div>
-      <div class="sel-color sel-color-green" onclick="setHighlightColor('green')" title="Green"></div>
-      <div class="sel-color sel-color-pink" onclick="setHighlightColor('pink')" title="Pink"></div>
-      <div class="sel-color sel-color-purple" onclick="setHighlightColor('purple')" title="Purple"></div>
+      <div class="sel-color sel-color-yellow active" onpointerdown="event.preventDefault();setHighlightColor('yellow')" title="Yellow"></div>
+      <div class="sel-color sel-color-blue" onpointerdown="event.preventDefault();setHighlightColor('blue')" title="Blue"></div>
+      <div class="sel-color sel-color-green" onpointerdown="event.preventDefault();setHighlightColor('green')" title="Green"></div>
+      <div class="sel-color sel-color-pink" onpointerdown="event.preventDefault();setHighlightColor('pink')" title="Pink"></div>
+      <div class="sel-color sel-color-purple" onpointerdown="event.preventDefault();setHighlightColor('purple')" title="Purple"></div>
     </div>
     <div class="sel-actions">
-      <button class="sel-btn sel-hl" onclick="highlightSelection()">Mark</button>
-      <button class="sel-btn sel-card" onclick="addToFlashcards()">Card</button>
-      <button class="sel-btn" onclick="aiAnalyzeSelection()" style="background:linear-gradient(135deg,#6B5CE7,#8B5CF6);color:white;padding:8px 10px">AI</button>
+      <button class="sel-btn sel-hl" onpointerdown="event.preventDefault();highlightSelection()">Mark</button>
+      <button class="sel-btn sel-card" onpointerdown="event.preventDefault();addToFlashcards()">Card</button>
+      <button class="sel-btn" onpointerdown="event.preventDefault();aiAnalyzeSelection()" style="background:linear-gradient(135deg,#6B5CE7,#8B5CF6);color:white;padding:8px 10px">AI</button>
     </div>
   </div>
 </div>
@@ -1043,22 +1043,31 @@ async function openBook(bookId) {
         const sel=iframe.contentWindow.getSelection();
         const text=sel?sel.toString().trim():'';
         if(text.length>=3){
+          selectedText=text;
+          // Always refresh saved range
+          try{
+            if(sel.rangeCount>0){
+              const r=sel.getRangeAt(0);
+              savedRange={startContainer:r.startContainer,startOffset:r.startOffset,endContainer:r.endContainer,endOffset:r.endOffset};
+              savedRangeSource='epub';
+            }
+          }catch(e){}
           if(text!==lastPolledText){
-            lastPolledText=text; selectedText=text;
+            lastPolledText=text;
             showSelectionBar(text);
           }
-          // Keep bar visible even if text hasn't changed
         } else if(text.length<3 && lastPolledText){
           lastPolledText='';
-          // Delay hiding to avoid race with click
           setTimeout(()=>{
-            const sel2=iframe.contentWindow.getSelection();
-            const t2=sel2?sel2.toString().trim():'';
-            if(t2.length<3) hideSelectionBar();
+            try{
+              const sel2=iframe.contentWindow.getSelection();
+              const t2=sel2?sel2.toString().trim():'';
+              if(t2.length<3) hideSelectionBar();
+            }catch(e){}
           },300);
         }
       }catch(e){}
-    },250);
+    },200);
     // Only hide bar on click if no text is selected (avoids hiding while selection is active)
     currentRendition.on('click',()=>{
       setTimeout(()=>{
@@ -1094,15 +1103,26 @@ function openWebArticle(article){
 
   // Selection detection for web articles
   const webReader=document.getElementById('web-reader');
+  const saveWebRange=()=>{
+    try{
+      const sel=window.getSelection();
+      if(sel&&sel.rangeCount>0&&sel.toString().trim().length>=3){
+        const r=sel.getRangeAt(0);
+        savedRange={startContainer:r.startContainer,startOffset:r.startOffset,endContainer:r.endContainer,endOffset:r.endOffset};
+        savedRangeSource='web';
+      }
+    }catch(e){}
+  };
   const checkWebSelection=()=>{
     setTimeout(()=>{
       const sel=window.getSelection();
       const text=sel?sel.toString().trim():'';
       if(text.length>=3){
         lastPolledText=text; selectedText=text; selectedCfiRange=null;
+        saveWebRange();
         showSelectionBar(text);
       }
-    },150);
+    },100);
   };
   webReader.addEventListener('mouseup',checkWebSelection,{passive:true});
   webReader.addEventListener('touchend',checkWebSelection,{passive:true});
@@ -1119,8 +1139,10 @@ function openWebArticle(article){
     const sel=window.getSelection();
     const text=sel?sel.toString().trim():'';
     if(text.length>=3){
+      selectedText=text; selectedCfiRange=null;
+      saveWebRange(); // Always refresh the range
       if(text!==lastPolledText){
-        lastPolledText=text; selectedText=text; selectedCfiRange=null;
+        lastPolledText=text;
         showSelectionBar(text);
       }
     } else if(text.length<3 && lastPolledText){
@@ -1131,7 +1153,7 @@ function openWebArticle(article){
         if(t2.length<3) hideSelectionBar();
       },300);
     }
-  },250);
+  },200);
 
   showScreen('reader');
   document.getElementById('reader-screen').classList.add('active');
@@ -1168,13 +1190,17 @@ function showSelectionBar(text){
   preview.textContent='"'+displayText+'"';
   bar.classList.add('active');
 
-  // Save the Range so we can use it even after the selection is cleared by button clicks
+  // Save precise Range anchor points (node references + offsets survive selection clearing)
   try{
     const webReader=document.getElementById('web-reader');
     if(webReader){
       const sel=window.getSelection();
       if(sel&&sel.rangeCount>0){
-        savedRange=sel.getRangeAt(0).cloneRange();
+        const r=sel.getRangeAt(0);
+        savedRange={
+          startContainer:r.startContainer, startOffset:r.startOffset,
+          endContainer:r.endContainer, endOffset:r.endOffset
+        };
         savedRangeSource='web';
       }
     } else {
@@ -1182,12 +1208,16 @@ function showSelectionBar(text){
       if(iframe&&iframe.contentWindow){
         const sel=iframe.contentWindow.getSelection();
         if(sel&&sel.rangeCount>0){
-          savedRange=sel.getRangeAt(0).cloneRange();
+          const r=sel.getRangeAt(0);
+          savedRange={
+            startContainer:r.startContainer, startOffset:r.startOffset,
+            endContainer:r.endContainer, endOffset:r.endOffset
+          };
           savedRangeSource='epub';
         }
       }
     }
-  }catch(e){ console.log('Range save error:', e); }
+  }catch(e){}
 }
 function hideSelectionBar(){
   document.getElementById('selection-bar').classList.remove('active');
@@ -1212,13 +1242,14 @@ function applyHighlight(cfiRange, color, hlId){
   if(hlId) epubAnnotationMap[hlId]={cfiRange,annotClass};
 }
 
-// Apply highlight using saved Range (immune to selection being cleared by button clicks)
+// Apply highlight by using the live selection or saved range
 function applySelectionHighlight(color){
+  if(!selectedText||selectedText.length<2) return false;
   const c=HIGHLIGHT_COLORS[color]||HIGHLIGHT_COLORS.yellow;
-  const hlStyle='background:'+c.bg+';border-bottom:2px solid '+c.border+';border-radius:2px;cursor:pointer;padding:0 1px;';
   const hlId='hl_'+Date.now();
+  const hlStyle='background:'+c.bg+';border-bottom:2px solid '+c.border+';border-radius:2px;cursor:pointer;padding:0 1px;';
 
-  // EPUB with cfiRange: use epub.js annotation API (most reliable for EPUB)
+  // EPUB with cfiRange: use epub.js annotation API
   if(selectedCfiRange&&currentRendition){
     applyHighlight(selectedCfiRange,color,hlId);
     highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:selectedText,color:color,cfiRange:selectedCfiRange,timestamp:Date.now()});
@@ -1226,61 +1257,93 @@ function applySelectionHighlight(color){
     return true;
   }
 
-  // Use savedRange for DOM-based highlighting
-  if(!savedRange){
-    console.log('No saved range available');
-    return false;
+  // Try to get a live Range (best option - pointerdown preventDefault should keep it alive)
+  let range=null, doc=null;
+  const webReader=document.getElementById('web-reader');
+  if(webReader){
+    doc=document;
+    try{
+      const sel=window.getSelection();
+      if(sel&&sel.rangeCount>0&&sel.toString().trim().length>=2){
+        range=sel.getRangeAt(0);
+      }
+    }catch(e){}
+  } else {
+    const iframe=document.getElementById('reader-container').querySelector('iframe');
+    if(iframe&&iframe.contentDocument){
+      doc=iframe.contentDocument;
+      try{
+        const sel=iframe.contentWindow.getSelection();
+        if(sel&&sel.rangeCount>0&&sel.toString().trim().length>=2){
+          range=sel.getRangeAt(0);
+        }
+      }catch(e){}
+    }
   }
 
-  try{
-    if(savedRangeSource==='web'){
-      // Web article: manipulate main document DOM
-      const span=document.createElement('span');
-      span.className='text-highlight';
-      span.dataset.hlId=hlId;
-      span.dataset.color=color;
-      span.style.cssText=hlStyle;
-      span.onclick=function(e){e.stopPropagation();promptRemoveHighlight(hlId);};
-      try{
-        savedRange.surroundContents(span);
-      }catch(e){
-        const fragment=savedRange.extractContents();
-        span.appendChild(fragment);
-        savedRange.insertNode(span);
+  // Fall back to reconstructing from savedRange
+  if(!range&&savedRange&&savedRange.startContainer){
+    if(!doc){
+      if(webReader) doc=document;
+      else {
+        const iframe=document.getElementById('reader-container').querySelector('iframe');
+        if(iframe&&iframe.contentDocument) doc=iframe.contentDocument;
       }
-      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent||selectedText,color:color,timestamp:Date.now()});
-      saveHighlights();
-      return true;
+    }
+    if(doc){
+      try{
+        range=doc.createRange();
+        range.setStart(savedRange.startContainer, savedRange.startOffset);
+        range.setEnd(savedRange.endContainer, savedRange.endOffset);
+        if(range.collapsed) range=null;
+      }catch(e){ range=null; }
+    }
+  }
 
-    } else if(savedRangeSource==='epub'){
-      // EPUB iframe: manipulate iframe DOM
-      const iframe=document.getElementById('reader-container').querySelector('iframe');
-      if(!iframe||!iframe.contentDocument) return false;
-      const doc=iframe.contentDocument;
-      const span=doc.createElement('span');
-      span.style.cssText=hlStyle;
-      span.dataset.hlId=hlId;
-      span.dataset.color=color;
+  if(!range||!doc) return false;
+
+  try{
+    const span=doc.createElement('span');
+    span.style.cssText=hlStyle;
+    span.dataset.hlId=hlId;
+    span.dataset.color=color;
+
+    if(webReader){
+      span.onclick=function(e){e.stopPropagation();promptRemoveHighlight(hlId);};
+    } else {
       span.addEventListener('click',function(e){
         e.stopPropagation();
         window.parent.postMessage({type:'hl-click',hlId:hlId},'*');
       });
-      try{
-        savedRange.surroundContents(span);
-      }catch(e){
-        const fragment=savedRange.extractContents();
-        span.appendChild(fragment);
-        savedRange.insertNode(span);
-      }
-      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent||selectedText,color:color,timestamp:Date.now()});
-      saveHighlights();
-      return true;
     }
+
+    try{
+      range.surroundContents(span);
+    }catch(e){
+      // Selection crosses element boundaries
+      const fragment=range.extractContents();
+      span.appendChild(fragment);
+      range.insertNode(span);
+    }
+
+    // Clear the browser selection to avoid stale state
+    try{
+      if(webReader) window.getSelection().removeAllRanges();
+      else {
+        const iframe=document.getElementById('reader-container').querySelector('iframe');
+        if(iframe) iframe.contentWindow.getSelection().removeAllRanges();
+      }
+    }catch(e){}
+
+    highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:selectedText,color:color,timestamp:Date.now()});
+    saveHighlights();
+    // Clear savedRange to avoid stale node references
+    savedRange=null;
+    return true;
   }catch(e){
-    console.log('Highlight apply error:', e);
+    console.log('Highlight error:', e);
     return false;
   }
-  return false;
 }
 
 // Listen for highlight clicks from iframe
