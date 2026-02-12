@@ -1107,21 +1107,160 @@ function hideSelectionBar(){
 }
 
 // ===== HIGHLIGHT & ADD CARD =====
+// Highlight storage: {id, bookId, text, color, cfiRange?, timestamp}
+let highlights = JSON.parse(localStorage.getItem('rc_highlights') || '[]');
+function saveHighlights(){localStorage.setItem('rc_highlights',JSON.stringify(highlights));}
+
 function applyHighlight(cfiRange, color){
   if(!cfiRange||!currentRendition)return;
   const c=HIGHLIGHT_COLORS[color]||HIGHLIGHT_COLORS.yellow;
-  currentRendition.annotations.highlight(cfiRange,{},()=>{},'hl-'+color,{
+  currentRendition.annotations.highlight(cfiRange,{},()=>{},'hl-'+Date.now(),{
     'fill':c.fill,'fill-opacity':'0.5','mix-blend-mode':'multiply'
   });
 }
 
+// Apply highlight using browser Selection API (works for both EPUB iframe and web articles)
+function applySelectionHighlight(color){
+  const c=HIGHLIGHT_COLORS[color]||HIGHLIGHT_COLORS.yellow;
+  const bgColor=c.fill.replace('0.5','0.45');
+
+  // Try web reader first (direct DOM)
+  const webReader=document.getElementById('web-reader');
+  if(webReader){
+    const sel=window.getSelection();
+    if(!sel||sel.rangeCount===0||sel.toString().trim().length<3)return false;
+    const range=sel.getRangeAt(0);
+    // Wrap in a highlight span
+    const hlId='hl_'+Date.now();
+    const span=document.createElement('span');
+    span.className='text-highlight';
+    span.dataset.hlId=hlId;
+    span.dataset.color=color;
+    span.style.cssText='background:'+bgColor+';border-radius:2px;cursor:pointer;';
+    span.onclick=function(e){e.stopPropagation();showRemoveHighlight(hlId,this);};
+    try{
+      range.surroundContents(span);
+      sel.removeAllRanges();
+      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent,color:color,timestamp:Date.now()});
+      saveHighlights();
+      return true;
+    }catch(e){
+      // surroundContents fails if selection spans multiple elements, use alternative
+      const fragment=range.extractContents();
+      span.appendChild(fragment);
+      range.insertNode(span);
+      sel.removeAllRanges();
+      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent,color:color,timestamp:Date.now()});
+      saveHighlights();
+      return true;
+    }
+  }
+
+  // Try EPUB iframe
+  if(currentRendition){
+    const iframe=document.getElementById('reader-container').querySelector('iframe');
+    if(!iframe||!iframe.contentWindow)return false;
+    const sel=iframe.contentWindow.getSelection();
+    if(!sel||sel.rangeCount===0||sel.toString().trim().length<3)return false;
+
+    // Method 1: use cfiRange if available
+    if(selectedCfiRange){
+      applyHighlight(selectedCfiRange,color);
+      const hlId='hl_'+Date.now();
+      highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:sel.toString(),color:color,cfiRange:selectedCfiRange,timestamp:Date.now()});
+      saveHighlights();
+      sel.removeAllRanges();
+      return true;
+    }
+
+    // Method 2: directly manipulate iframe DOM
+    const range=sel.getRangeAt(0);
+    const hlId='hl_'+Date.now();
+    const doc=iframe.contentDocument;
+    const span=doc.createElement('span');
+    span.style.cssText='background:'+bgColor+';border-radius:2px;cursor:pointer;';
+    span.dataset.hlId=hlId;
+    span.dataset.color=color;
+    span.addEventListener('click',function(e){
+      e.stopPropagation();
+      // Communicate to parent to show remove option
+      window.postMessage({type:'hl-click',hlId:hlId},'*');
+    });
+    try{
+      range.surroundContents(span);
+    }catch(e){
+      const fragment=range.extractContents();
+      span.appendChild(fragment);
+      range.insertNode(span);
+    }
+    sel.removeAllRanges();
+    highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:span.textContent,color:color,timestamp:Date.now()});
+    saveHighlights();
+    return true;
+  }
+  return false;
+}
+
+// Listen for highlight clicks from iframe
+window.addEventListener('message',function(e){
+  if(e.data&&e.data.type==='hl-click'){
+    showRemoveHighlight(e.data.hlId,null);
+  }
+});
+
+// Remove highlight
+let pendingRemoveHlId=null;
+function showRemoveHighlight(hlId, spanEl){
+  pendingRemoveHlId=hlId;
+  if(confirm('Remove this highlight?')){
+    removeHighlight(hlId);
+  }
+  pendingRemoveHlId=null;
+}
+
+function removeHighlight(hlId){
+  // Remove from DOM: web reader
+  const webSpan=document.querySelector('[data-hl-id="'+hlId+'"]');
+  if(webSpan){
+    const parent=webSpan.parentNode;
+    while(webSpan.firstChild)parent.insertBefore(webSpan.firstChild,webSpan);
+    parent.removeChild(webSpan);
+    parent.normalize();
+  }
+  // Remove from DOM: epub iframe
+  const iframe=document.getElementById('reader-container').querySelector('iframe');
+  if(iframe&&iframe.contentDocument){
+    const iframeSpan=iframe.contentDocument.querySelector('[data-hl-id="'+hlId+'"]');
+    if(iframeSpan){
+      const parent=iframeSpan.parentNode;
+      while(iframeSpan.firstChild)parent.insertBefore(iframeSpan.firstChild,iframeSpan);
+      parent.removeChild(iframeSpan);
+      parent.normalize();
+    }
+  }
+  // Remove from storage
+  highlights=highlights.filter(h=>h.id!==hlId);
+  saveHighlights();
+  showToast('Highlight removed');
+}
+
+// Keyboard undo (Ctrl/Cmd+Z) to remove last highlight
+document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'){
+    const lastHl=highlights.filter(h=>h.bookId===(currentBook?currentBook.id:'')).pop();
+    if(lastHl){
+      e.preventDefault();
+      removeHighlight(lastHl.id);
+    }
+  }
+});
+
 function highlightSelection(){
   if(!selectedText)return;
-  if(selectedCfiRange&&currentRendition){
-    applyHighlight(selectedCfiRange, activeHighlightColor);
-  }
+  const success=applySelectionHighlight(activeHighlightColor);
   hideSelectionBar();
-  showToast('Highlighted');
+  if(success) showToast('Highlighted');
+  else showToast('Could not highlight — try selecting again');
 }
 
 function addToFlashcards(){
@@ -1139,11 +1278,8 @@ function addToFlashcards(){
   };
   flashcards.push(card);
   saveFlashcards();
-  // Also ensure the tag exists in our tag list
   if(!cardTags.includes(colorTag)){cardTags.push(colorTag);saveCardTags();}
-  if(selectedCfiRange&&currentRendition){
-    applyHighlight(selectedCfiRange, activeHighlightColor);
-  }
+  applySelectionHighlight(activeHighlightColor);
   hideSelectionBar();
   showToast('Added to Cards!');
 }
@@ -1400,9 +1536,7 @@ async function aiAnalyzeSelection() {
   if(!cardTags.includes(colorTag)){cardTags.push(colorTag);saveCardTags();}
 
   // Highlight the text
-  if (selectedCfiRange && currentRendition) {
-    applyHighlight(selectedCfiRange, activeHighlightColor);
-  }
+  applySelectionHighlight(activeHighlightColor);
 
   hideSelectionBar();
   showToast('Analyzing with AI...');
