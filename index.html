@@ -271,8 +271,8 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
 .loading-overlay.active{display:flex}
 .loading-spinner{width:48px;height:48px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(20px);background:var(--text-primary);color:var(--bg-primary);font-family:var(--font-ui);font-size:14px;font-weight:500;padding:10px 20px;border-radius:10px;z-index:600;opacity:0;transition:all .3s;pointer-events:none}
-.toast.active{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast{position:fixed;bottom:calc(80px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(20px);background:var(--text-primary);color:var(--bg-primary);font-family:var(--font-ui);font-size:14px;font-weight:500;padding:10px 20px;border-radius:10px;z-index:600;opacity:0;transition:all .3s;pointer-events:none;display:flex;align-items:center;white-space:nowrap}
+.toast.active{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 </style>
 </head>
 <body>
@@ -308,7 +308,10 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
   <div class="reader-header" id="reader-header">
     <button class="reader-back" onclick="closeReader()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>Back</button>
     <span class="reader-chapter-title" id="reader-chapter-title"></span>
-    <button class="reader-settings-btn" onclick="openReaderSettings()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
+    <div style="display:flex;gap:4px">
+      <button class="reader-settings-btn" onclick="openHighlightsList()" title="Highlights"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
+      <button class="reader-settings-btn" onclick="openReaderSettings()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
+    </div>
   </div>
   <div id="reader-container"></div>
   <div class="reader-footer" id="reader-footer">
@@ -474,6 +477,19 @@ body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-
       </div>
       <div id="settings-worker-status" style="font-family:var(--font-ui);font-size:12px;color:var(--text-muted);margin-top:6px"></div>
     </div>
+    <div style="margin-bottom:16px">
+      <label style="display:block;font-family:var(--font-ui);font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Default Card Highlight Color</label>
+      <div id="settings-card-color" style="display:flex;gap:10px;align-items:center"></div>
+      <div style="font-family:var(--font-ui);font-size:12px;color:var(--text-muted);margin-top:6px">When adding text to Cards, it will be highlighted in this color.</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="highlights-modal" onclick="closeHighlightsModal(event)">
+  <div class="modal-sheet" onclick="event.stopPropagation()" style="max-height:70vh;display:flex;flex-direction:column">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Highlights</div>
+    <div id="highlights-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px"></div>
   </div>
 </div>
 
@@ -503,10 +519,24 @@ function openAppSettings() {
   const status = document.getElementById('settings-worker-status');
   status.textContent = getWorkerUrl() ? '✓ Connected' : 'Not configured';
   status.style.color = getWorkerUrl() ? 'var(--green)' : 'var(--text-muted)';
+  // Render card default color picker
+  const currentColor=localStorage.getItem('rc_card_default_color')||'yellow';
+  const colorNames={yellow:'Yellow',blue:'Blue',green:'Green',pink:'Pink',purple:'Purple'};
+  const colorHex={yellow:'#E8C820',blue:'#3B82F6',green:'#10B981',pink:'#EC4899',purple:'#8B5CF6'};
+  const container=document.getElementById('settings-card-color');
+  container.innerHTML=Object.keys(colorNames).map(c=>{
+    const active=c===currentColor;
+    return '<div onclick="setCardDefaultColor(\''+c+'\')" style="width:32px;height:32px;border-radius:50%;background:'+colorHex[c]+';cursor:pointer;border:3px solid '+(active?'var(--text-primary)':'transparent')+';box-shadow:'+(active?'0 0 0 2px var(--bg-card)':'')+';transition:all .15s" title="'+colorNames[c]+'"></div>';
+  }).join('');
 }
 function closeAppSettings(e) {
   if (e && e.target !== document.getElementById('app-settings-modal')) return;
   document.getElementById('app-settings-modal').classList.remove('active');
+}
+function setCardDefaultColor(color){
+  localStorage.setItem('rc_card_default_color',color);
+  openAppSettings(); // re-render to update selection
+  showToast('Card highlight color: '+color);
 }
 function saveAppWorkerUrl() {
   let url = document.getElementById('settings-worker-url').value.trim().replace(/\/+$/, '');
@@ -980,26 +1010,27 @@ async function openBook(bookId) {
       selectedText=text; selectedCfiRange=cfiRange;
       showSelectionBar(text);
     });
-    // Mobile: listen for touchend to check selection after finger lifts
+    // Mobile & desktop: listen for mouseup/touchend in iframe to detect selection
     currentRendition.on('rendered',(sec,view)=>{
       try{
         const doc=view.document||view.contents&&view.contents.document;
-        if(doc){
-          doc.addEventListener('touchend',()=>{
-            setTimeout(()=>{
-              try{
-                const sel=doc.defaultView.getSelection();
-                const text=sel?sel.toString().trim():'';
-                if(text.length>=3){
-                  selectedText=text;
-                  // Try to get cfiRange from selection
-                  try{selectedCfiRange=currentRendition.currentLocation().start.cfi;}catch(e){selectedCfiRange=null;}
-                  showSelectionBar(text);
-                }
-              }catch(e){}
-            },200);
-          },{passive:true});
-        }
+        if(!doc)return;
+        const checkSelection=()=>{
+          setTimeout(()=>{
+            try{
+              const sel=doc.defaultView.getSelection();
+              const text=sel?sel.toString().trim():'';
+              if(text.length>=3){
+                selectedText=text;
+                try{selectedCfiRange=currentRendition.currentLocation().start.cfi;}catch(e){selectedCfiRange=null;}
+                lastPolledText=text;
+                showSelectionBar(text);
+              }
+            }catch(e){}
+          },150);
+        };
+        doc.addEventListener('mouseup',checkSelection,{passive:true});
+        doc.addEventListener('touchend',checkSelection,{passive:true});
       }catch(e){}
     });
     if(selectionPollTimer) clearInterval(selectionPollTimer);
@@ -1009,16 +1040,35 @@ async function openBook(bookId) {
         if(!iframe||!iframe.contentWindow)return;
         const sel=iframe.contentWindow.getSelection();
         const text=sel?sel.toString().trim():'';
-        if(text.length>=3 && text!==lastPolledText){
-          lastPolledText=text; selectedText=text;
-          showSelectionBar(text);
+        if(text.length>=3){
+          if(text!==lastPolledText){
+            lastPolledText=text; selectedText=text;
+            showSelectionBar(text);
+          }
+          // Keep bar visible even if text hasn't changed
         } else if(text.length<3 && lastPolledText){
           lastPolledText='';
-          hideSelectionBar();
+          // Delay hiding to avoid race with click
+          setTimeout(()=>{
+            const sel2=iframe.contentWindow.getSelection();
+            const t2=sel2?sel2.toString().trim():'';
+            if(t2.length<3) hideSelectionBar();
+          },300);
         }
       }catch(e){}
-    },500);
-    currentRendition.on('click',()=>{hideSelectionBar();});
+    },250);
+    // Only hide bar on click if no text is selected (avoids hiding while selection is active)
+    currentRendition.on('click',()=>{
+      setTimeout(()=>{
+        try{
+          const iframe=document.getElementById('reader-container').querySelector('iframe');
+          if(!iframe)return;
+          const sel=iframe.contentWindow.getSelection();
+          const text=sel?sel.toString().trim():'';
+          if(text.length<3) hideSelectionBar();
+        }catch(e){hideSelectionBar();}
+      },100);
+    });
     showScreen('reader'); document.getElementById('reader-screen').classList.add('active'); hideLoading();
   } catch(e) { hideLoading(); showToast('Error: '+e.message); }
 }
@@ -1042,8 +1092,7 @@ function openWebArticle(article){
 
   // Selection detection for web articles
   const webReader=document.getElementById('web-reader');
-  // Mobile: touchend to detect selection after finger lifts
-  webReader.addEventListener('touchend',()=>{
+  const checkWebSelection=()=>{
     setTimeout(()=>{
       const sel=window.getSelection();
       const text=sel?sel.toString().trim():'';
@@ -1051,20 +1100,36 @@ function openWebArticle(article){
         lastPolledText=text; selectedText=text; selectedCfiRange=null;
         showSelectionBar(text);
       }
-    },200);
-  },{passive:true});
+    },150);
+  };
+  webReader.addEventListener('mouseup',checkWebSelection,{passive:true});
+  webReader.addEventListener('touchend',checkWebSelection,{passive:true});
+  // Click to dismiss only if no selection
+  webReader.addEventListener('click',()=>{
+    setTimeout(()=>{
+      const sel=window.getSelection();
+      const text=sel?sel.toString().trim():'';
+      if(text.length<3){hideSelectionBar();}
+    },100);
+  });
   if(selectionPollTimer) clearInterval(selectionPollTimer);
   selectionPollTimer=setInterval(()=>{
     const sel=window.getSelection();
     const text=sel?sel.toString().trim():'';
-    if(text.length>=3 && text!==lastPolledText){
-      lastPolledText=text; selectedText=text; selectedCfiRange=null;
-      showSelectionBar(text);
+    if(text.length>=3){
+      if(text!==lastPolledText){
+        lastPolledText=text; selectedText=text; selectedCfiRange=null;
+        showSelectionBar(text);
+      }
     } else if(text.length<3 && lastPolledText){
       lastPolledText='';
-      hideSelectionBar();
+      setTimeout(()=>{
+        const sel2=window.getSelection();
+        const t2=sel2?sel2.toString().trim():'';
+        if(t2.length<3) hideSelectionBar();
+      },300);
     }
-  },300);
+  },250);
 
   showScreen('reader');
   document.getElementById('reader-screen').classList.add('active');
@@ -1081,11 +1146,11 @@ let selectionPollTimer=null, lastPolledText='';
 let activeHighlightColor = 'yellow';
 
 const HIGHLIGHT_COLORS = {
-  yellow: { fill:'rgba(255,243,196,0.5)', tag:'📒 Yellow' },
-  blue:   { fill:'rgba(219,234,254,0.5)', tag:'📘 Blue' },
-  green:  { fill:'rgba(209,250,229,0.5)', tag:'📗 Green' },
-  pink:   { fill:'rgba(252,231,243,0.5)', tag:'📕 Pink' },
-  purple: { fill:'rgba(237,233,254,0.5)', tag:'📓 Purple' }
+  yellow: { bg:'rgba(255,235,120,0.55)', border:'#E8C820', tag:'📒 Yellow', fill:'rgba(255,235,120,0.6)' },
+  blue:   { bg:'rgba(147,197,253,0.50)', border:'#3B82F6', tag:'📘 Blue', fill:'rgba(147,197,253,0.55)' },
+  green:  { bg:'rgba(110,231,183,0.50)', border:'#10B981', tag:'📗 Green', fill:'rgba(110,231,183,0.55)' },
+  pink:   { bg:'rgba(249,168,212,0.50)', border:'#EC4899', tag:'📕 Pink', fill:'rgba(249,168,212,0.55)' },
+  purple: { bg:'rgba(196,181,253,0.50)', border:'#8B5CF6', tag:'📓 Purple', fill:'rgba(196,181,253,0.55)' }
 };
 
 function setHighlightColor(color){
@@ -1111,18 +1176,23 @@ function hideSelectionBar(){
 let highlights = JSON.parse(localStorage.getItem('rc_highlights') || '[]');
 function saveHighlights(){localStorage.setItem('rc_highlights',JSON.stringify(highlights));}
 
-function applyHighlight(cfiRange, color){
+// Map hlId -> epub annotation class name for removal
+let epubAnnotationMap = {};
+
+function applyHighlight(cfiRange, color, hlId){
   if(!cfiRange||!currentRendition)return;
   const c=HIGHLIGHT_COLORS[color]||HIGHLIGHT_COLORS.yellow;
-  currentRendition.annotations.highlight(cfiRange,{},()=>{},'hl-'+Date.now(),{
-    'fill':c.fill,'fill-opacity':'0.5','mix-blend-mode':'multiply'
+  const annotClass='hl-'+hlId;
+  currentRendition.annotations.highlight(cfiRange,{},()=>{},annotClass,{
+    'fill':c.fill,'fill-opacity':'0.6','mix-blend-mode':'multiply'
   });
+  if(hlId) epubAnnotationMap[hlId]={cfiRange,annotClass};
 }
 
 // Apply highlight using browser Selection API (works for both EPUB iframe and web articles)
 function applySelectionHighlight(color){
   const c=HIGHLIGHT_COLORS[color]||HIGHLIGHT_COLORS.yellow;
-  const bgColor=c.fill.replace('0.5','0.45');
+  const hlStyle='background:'+c.bg+';border-bottom:2px solid '+c.border+';border-radius:2px;cursor:pointer;padding:0 1px;';
 
   // Try web reader first (direct DOM)
   const webReader=document.getElementById('web-reader');
@@ -1130,14 +1200,13 @@ function applySelectionHighlight(color){
     const sel=window.getSelection();
     if(!sel||sel.rangeCount===0||sel.toString().trim().length<3)return false;
     const range=sel.getRangeAt(0);
-    // Wrap in a highlight span
     const hlId='hl_'+Date.now();
     const span=document.createElement('span');
     span.className='text-highlight';
     span.dataset.hlId=hlId;
     span.dataset.color=color;
-    span.style.cssText='background:'+bgColor+';border-radius:2px;cursor:pointer;';
-    span.onclick=function(e){e.stopPropagation();showRemoveHighlight(hlId,this);};
+    span.style.cssText=hlStyle;
+    span.onclick=function(e){e.stopPropagation();promptRemoveHighlight(hlId);};
     try{
       range.surroundContents(span);
       sel.removeAllRanges();
@@ -1145,7 +1214,6 @@ function applySelectionHighlight(color){
       saveHighlights();
       return true;
     }catch(e){
-      // surroundContents fails if selection spans multiple elements, use alternative
       const fragment=range.extractContents();
       span.appendChild(fragment);
       range.insertNode(span);
@@ -1165,8 +1233,8 @@ function applySelectionHighlight(color){
 
     // Method 1: use cfiRange if available
     if(selectedCfiRange){
-      applyHighlight(selectedCfiRange,color);
       const hlId='hl_'+Date.now();
+      applyHighlight(selectedCfiRange,color,hlId);
       highlights.push({id:hlId,bookId:currentBook?currentBook.id:'',text:sel.toString(),color:color,cfiRange:selectedCfiRange,timestamp:Date.now()});
       saveHighlights();
       sel.removeAllRanges();
@@ -1178,13 +1246,12 @@ function applySelectionHighlight(color){
     const hlId='hl_'+Date.now();
     const doc=iframe.contentDocument;
     const span=doc.createElement('span');
-    span.style.cssText='background:'+bgColor+';border-radius:2px;cursor:pointer;';
+    span.style.cssText=hlStyle;
     span.dataset.hlId=hlId;
     span.dataset.color=color;
     span.addEventListener('click',function(e){
       e.stopPropagation();
-      // Communicate to parent to show remove option
-      window.postMessage({type:'hl-click',hlId:hlId},'*');
+      window.parent.postMessage({type:'hl-click',hlId:hlId},'*');
     });
     try{
       range.surroundContents(span);
@@ -1204,39 +1271,62 @@ function applySelectionHighlight(color){
 // Listen for highlight clicks from iframe
 window.addEventListener('message',function(e){
   if(e.data&&e.data.type==='hl-click'){
-    showRemoveHighlight(e.data.hlId,null);
+    promptRemoveHighlight(e.data.hlId);
   }
 });
 
-// Remove highlight
-let pendingRemoveHlId=null;
-function showRemoveHighlight(hlId, spanEl){
-  pendingRemoveHlId=hlId;
-  if(confirm('Remove this highlight?')){
-    removeHighlight(hlId);
+// Undo system: track last highlight for quick undo
+let lastHighlightId=null;
+let undoToastTimer=null;
+
+function promptRemoveHighlight(hlId){
+  // Show undo toast when clicking a highlight
+  lastHighlightId=hlId;
+  showUndoToast('Tap to remove highlight');
+}
+
+function showUndoToast(msg){
+  if(undoToastTimer)clearTimeout(undoToastTimer);
+  const toast=document.getElementById('toast');
+  toast.textContent='';
+  toast.innerHTML=msg+' <button onclick="undoLastHighlight()" style="margin-left:8px;padding:4px 12px;border:1.5px solid rgba(255,255,255,.5);border-radius:6px;background:transparent;color:inherit;font-family:var(--font-ui);font-size:13px;font-weight:600;cursor:pointer">Remove</button>';
+  toast.classList.add('active');
+  undoToastTimer=setTimeout(()=>{toast.classList.remove('active');lastHighlightId=null;},5000);
+}
+
+function undoLastHighlight(){
+  if(lastHighlightId){
+    removeHighlight(lastHighlightId);
+    lastHighlightId=null;
   }
-  pendingRemoveHlId=null;
+  document.getElementById('toast').classList.remove('active');
+  if(undoToastTimer)clearTimeout(undoToastTimer);
 }
 
 function removeHighlight(hlId){
-  // Remove from DOM: web reader
-  const webSpan=document.querySelector('[data-hl-id="'+hlId+'"]');
-  if(webSpan){
-    const parent=webSpan.parentNode;
-    while(webSpan.firstChild)parent.insertBefore(webSpan.firstChild,webSpan);
-    parent.removeChild(webSpan);
-    parent.normalize();
+  // Remove epub.js annotation if tracked
+  if(epubAnnotationMap[hlId]&&currentRendition){
+    try{
+      currentRendition.annotations.remove(epubAnnotationMap[hlId].cfiRange,'highlight');
+    }catch(e){console.log('Annotation remove fallback',e);}
+    delete epubAnnotationMap[hlId];
   }
-  // Remove from DOM: epub iframe
+  // Remove from DOM: web reader
+  document.querySelectorAll('[data-hl-id="'+hlId+'"]').forEach(span=>{
+    const parent=span.parentNode;
+    while(span.firstChild)parent.insertBefore(span.firstChild,span);
+    parent.removeChild(span);
+    parent.normalize();
+  });
+  // Remove from DOM: epub iframe (for DOM-based highlights)
   const iframe=document.getElementById('reader-container').querySelector('iframe');
   if(iframe&&iframe.contentDocument){
-    const iframeSpan=iframe.contentDocument.querySelector('[data-hl-id="'+hlId+'"]');
-    if(iframeSpan){
-      const parent=iframeSpan.parentNode;
-      while(iframeSpan.firstChild)parent.insertBefore(iframeSpan.firstChild,iframeSpan);
-      parent.removeChild(iframeSpan);
+    iframe.contentDocument.querySelectorAll('[data-hl-id="'+hlId+'"]').forEach(span=>{
+      const parent=span.parentNode;
+      while(span.firstChild)parent.insertBefore(span.firstChild,span);
+      parent.removeChild(span);
       parent.normalize();
-    }
+    });
   }
   // Remove from storage
   highlights=highlights.filter(h=>h.id!==hlId);
@@ -1246,8 +1336,11 @@ function removeHighlight(hlId){
 
 // Keyboard undo (Ctrl/Cmd+Z) to remove last highlight
 document.addEventListener('keydown',function(e){
-  if((e.ctrlKey||e.metaKey)&&e.key==='z'){
-    const lastHl=highlights.filter(h=>h.bookId===(currentBook?currentBook.id:'')).pop();
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){
+    // Only when in reader
+    if(!document.getElementById('reader-screen').classList.contains('active'))return;
+    const bookId=currentBook?currentBook.id:'';
+    const lastHl=highlights.filter(h=>h.bookId===bookId).pop();
     if(lastHl){
       e.preventDefault();
       removeHighlight(lastHl.id);
@@ -1255,17 +1348,125 @@ document.addEventListener('keydown',function(e){
   }
 });
 
+// Highlights list panel
+function openHighlightsList(){
+  const bookId=currentBook?currentBook.id:'';
+  const bookHighlights=highlights.filter(h=>h.bookId===bookId);
+  const list=document.getElementById('highlights-list');
+  const colorHex={yellow:'#E8C820',blue:'#3B82F6',green:'#10B981',pink:'#EC4899',purple:'#8B5CF6'};
+
+  if(!bookHighlights.length){
+    list.innerHTML='<div style="text-align:center;padding:32px 16px;color:var(--text-muted);font-family:var(--font-ui);font-size:14px">No highlights yet.<br>Select text and tap Mark to highlight.</div>';
+  } else {
+    list.innerHTML=bookHighlights.slice().reverse().map(h=>{
+      const dotColor=colorHex[h.color]||colorHex.yellow;
+      const preview=h.text.length>80?h.text.substring(0,80)+'…':h.text;
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="navigateToHighlight(\''+h.id+'\')">'
+        +'<div style="width:12px;height:12px;border-radius:50%;background:'+dotColor+';flex-shrink:0;margin-top:4px"></div>'
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-family:var(--font-body);font-size:14px;line-height:1.5;color:var(--text-primary);font-style:italic">"'+escapeHtml(preview)+'"</div>'
+        +'</div>'
+        +'<button onclick="event.stopPropagation();removeHighlightFromList(\''+h.id+'\')" style="flex-shrink:0;border:none;background:none;color:var(--text-muted);cursor:pointer;padding:4px;opacity:.6" title="Remove">'
+          +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+        +'</button>'
+      +'</div>';
+    }).join('');
+  }
+
+  document.getElementById('highlights-modal').classList.add('active');
+}
+function closeHighlightsModal(e){
+  if(e&&e.target!==document.getElementById('highlights-modal'))return;
+  document.getElementById('highlights-modal').classList.remove('active');
+}
+function removeHighlightFromList(hlId){
+  removeHighlight(hlId);
+  openHighlightsList(); // re-render the list
+}
+function navigateToHighlight(hlId){
+  closeHighlightsModal({target:document.getElementById('highlights-modal')});
+  const hl=highlights.find(h=>h.id===hlId);
+  if(!hl)return;
+
+  // EPUB: if we have cfiRange, use rendition.display()
+  if(hl.cfiRange&&currentRendition){
+    currentRendition.display(hl.cfiRange).then(()=>{
+      // Flash the highlight briefly
+      setTimeout(()=>flashHighlightInIframe(hlId),300);
+    });
+    return;
+  }
+
+  // Web article or DOM-based highlight: scroll to the span
+  const webSpan=document.querySelector('[data-hl-id="'+hlId+'"]');
+  if(webSpan){
+    webSpan.scrollIntoView({behavior:'smooth',block:'center'});
+    flashHighlightSpan(webSpan);
+    return;
+  }
+
+  // Try iframe
+  const iframe=document.getElementById('reader-container').querySelector('iframe');
+  if(iframe&&iframe.contentDocument){
+    const iframeSpan=iframe.contentDocument.querySelector('[data-hl-id="'+hlId+'"]');
+    if(iframeSpan){
+      iframeSpan.scrollIntoView({behavior:'smooth',block:'center'});
+      flashHighlightSpan(iframeSpan);
+      return;
+    }
+  }
+
+  // Fallback: try text search in web reader
+  const webReader=document.getElementById('web-reader');
+  if(webReader&&hl.text){
+    const searchText=hl.text.substring(0,30);
+    const walker=document.createTreeWalker(webReader,NodeFilter.SHOW_TEXT);
+    while(walker.nextNode()){
+      if(walker.currentNode.textContent.includes(searchText)){
+        walker.currentNode.parentElement.scrollIntoView({behavior:'smooth',block:'center'});
+        break;
+      }
+    }
+  }
+
+  showToast('Navigated to highlight');
+}
+
+function flashHighlightSpan(span){
+  const orig=span.style.outline;
+  span.style.outline='3px solid var(--accent)';
+  span.style.outlineOffset='2px';
+  setTimeout(()=>{span.style.outline=orig;span.style.outlineOffset='';},1500);
+}
+function flashHighlightInIframe(hlId){
+  const iframe=document.getElementById('reader-container').querySelector('iframe');
+  if(!iframe||!iframe.contentDocument)return;
+  const span=iframe.contentDocument.querySelector('[data-hl-id="'+hlId+'"]');
+  if(span) flashHighlightSpan(span);
+}
+
 function highlightSelection(){
   if(!selectedText)return;
   const success=applySelectionHighlight(activeHighlightColor);
   hideSelectionBar();
-  if(success) showToast('Highlighted');
+  if(success){
+    // Show undo toast with remove button
+    const bookId=currentBook?currentBook.id:'';
+    const lastHl=highlights.filter(h=>h.bookId===bookId).pop();
+    if(lastHl){
+      lastHighlightId=lastHl.id;
+      showUndoToast('Highlighted');
+    } else {
+      showToast('Highlighted');
+    }
+  }
   else showToast('Could not highlight — try selecting again');
 }
 
 function addToFlashcards(){
   if(!selectedText)return;
-  const colorTag=HIGHLIGHT_COLORS[activeHighlightColor].tag;
+  const cardColor=localStorage.getItem('rc_card_default_color')||'yellow';
+  const colorTag=HIGHLIGHT_COLORS[cardColor].tag;
   const card={
     id:'fc_'+Date.now(),
     text:selectedText,
@@ -1274,12 +1475,16 @@ function addToFlashcards(){
     level:0,nextReview:null,lastReviewed:null,reviewCount:0,
     note:'',
     tags:[colorTag],
-    highlightColor:activeHighlightColor
+    highlightColor:cardColor
   };
   flashcards.push(card);
   saveFlashcards();
   if(!cardTags.includes(colorTag)){cardTags.push(colorTag);saveCardTags();}
-  applySelectionHighlight(activeHighlightColor);
+  // Temporarily switch to card color for this highlight, then restore
+  const prevColor=activeHighlightColor;
+  activeHighlightColor=cardColor;
+  applySelectionHighlight(cardColor);
+  activeHighlightColor=prevColor;
   hideSelectionBar();
   showToast('Added to Cards!');
 }
