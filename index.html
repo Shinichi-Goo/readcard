@@ -995,6 +995,11 @@ async function openBook(bookId) {
     currentRendition=book.renderTo(container,{width:'100%',height:'100%',spread:readerSettings.spread,flow:'paginated'});
     applyReaderTheme();
     if(currentBook.currentCfi) currentRendition.display(currentBook.currentCfi); else currentRendition.display();
+    // Re-apply existing highlights for EPUB
+    const bookHighlights = highlights.filter(h => h.bookId === currentBook.id && h.cfiRange);
+    bookHighlights.forEach(hl => {
+      applyHighlight(hl.cfiRange, hl.color, hl.id);
+    });
     book.ready.then(()=>book.locations.generate(1600)).then(()=>{
       currentRendition.on('relocated',(loc)=>{
         const p=book.locations.percentageFromCfi(loc.start.cfi);
@@ -1154,6 +1159,9 @@ function openWebArticle(article){
       },300);
     }
   },200);
+
+  // Re-apply existing highlights for web articles
+  reapplyWebHighlights(article.id);
 
   showScreen('reader');
   document.getElementById('reader-screen').classList.add('active');
@@ -1412,7 +1420,42 @@ function removeHighlight(hlId){
   showToast('Highlight removed');
 }
 
-// Keyboard undo (Ctrl/Cmd+Z) to remove last highlight
+function reapplyWebHighlights(bookId) {
+  const webReader = document.getElementById('web-reader');
+  if (!webReader) return;
+  const bookHighlights = highlights.filter(h => h.bookId === bookId && !h.cfiRange); // DOM-based highlights
+  bookHighlights.forEach(hl => {
+    // Find the text in the DOM and wrap it with span
+    const walker = document.createTreeWalker(webReader, NodeFilter.SHOW_TEXT);
+    let found = false;
+    while (walker.nextNode() && !found) {
+      const node = walker.currentNode;
+      const index = node.textContent.indexOf(hl.text);
+      if (index !== -1) {
+        // Found the text, wrap it
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + hl.text.length);
+        const span = document.createElement('span');
+        const c = HIGHLIGHT_COLORS[hl.color] || HIGHLIGHT_COLORS.yellow;
+        span.style.cssText = 'background:' + c.bg + ';border-bottom:2px solid ' + c.border + ';border-radius:2px;cursor:pointer;padding:0 1px;';
+        span.dataset.hlId = hl.id;
+        span.dataset.color = hl.color;
+        span.onclick = function(e) { e.stopPropagation(); promptRemoveHighlight(hl.id); };
+        try {
+          range.surroundContents(span);
+          found = true;
+        } catch (e) {
+          // Fallback
+          const fragment = range.extractContents();
+          span.appendChild(fragment);
+          range.insertNode(span);
+          found = true;
+        }
+      }
+    }
+  });
+}
 document.addEventListener('keydown',function(e){
   if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){
     // Only when in reader
